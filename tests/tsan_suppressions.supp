@@ -1,0 +1,11 @@
+# ThreadSanitizer suppressions for uninstrumented system Qt6 libraries
+race:libQt6Core.so
+race:libQt6Gui.so
+race:libQt6Quick.so
+race:libQt6Qml.so
+race:QWaitCondition
+race:QThreadPool
+race:allocation_guard.cpp
+thread:libQt6Core.so
+thread:QThread::start
+thread:QQmlThread

@@ -232,14 +232,8 @@ void test_g_h_repeated_playback_and_rt_safe_flush() {
     std::cout << "[PASS] test_g_h_repeated_playback_and_rt_safe_flush\n";
 }
 
-void test_i_qt_gui_smoke_test(int argc, char* argv[]) {
+void test_i_qt_gui_smoke_test() {
     std::cout << "[RUN] test_i_qt_gui_smoke_test\n";
-
-    // Set offscreen platform for headless smoke testing
-    qputenv("QT_QPA_PLATFORM", "offscreen");
-
-    QGuiApplication app(argc, argv);
-    app.setApplicationName("SaudadeTest");
 
     qmlRegisterType<ui::PianoRollItem>("saudade.ui", 1, 0, "PianoRollItem");
     qmlRegisterType<ui::PianoKeysItem>("saudade.ui", 1, 0, "PianoKeysItem");
@@ -264,12 +258,135 @@ void test_i_qt_gui_smoke_test(int argc, char* argv[]) {
     std::cout << "[PASS] test_i_qt_gui_smoke_test\n";
 }
 
+#include <QTest>
+#include <QQuickWindow>
+
+void test_j_mouse_pointer_integration() {
+    std::cout << "[RUN] test_j_mouse_pointer_integration\n";
+
+    qmlRegisterType<ui::PianoRollItem>("saudade.ui", 1, 0, "PianoRollItem");
+    qmlRegisterType<ui::PianoKeysItem>("saudade.ui", 1, 0, "PianoKeysItem");
+    qmlRegisterUncreatableType<ui::EditorController>("saudade.ui", 1, 0, "EditorController", "C++ only");
+
+    audio::AudioEngine engine(make_test_synth_plan());
+    ui::EditorController controller(engine, 48000.0);
+
+    // Load full QML shell to test actual hierarchy (Flickable + PianoRollItem)
+    QQmlApplicationEngine qml_engine;
+    qml_engine.rootContext()->setContextProperty("editorController", &controller);
+    qml_engine.rootContext()->setContextProperty("controller", &controller);
+
+    const QString qml_path = QStringLiteral(SAUDADE_SOURCE_DIR "/apps/saudade/Main.qml");
+    qml_engine.load(QUrl::fromLocalFile(qml_path));
+
+    assert(!qml_engine.rootObjects().isEmpty());
+    auto* window = qobject_cast<QQuickWindow*>(qml_engine.rootObjects().first());
+    assert(window != nullptr);
+    window->show();
+
+    auto* piano_roll = window->findChild<ui::PianoRollItem*>();
+    assert(piano_roll != nullptr);
+
+    assert(controller.active_sequence()->empty());
+
+    // Map piano roll coordinate (e.g. x=90, y=480 -> pitch 60 C4) to window coordinates
+    const QPointF item_pos(90.0, 480.0);
+    const QPointF scene_pos = piano_roll->mapToScene(item_pos);
+    const QPoint window_pos(static_cast<int>(std::round(scene_pos.x())),
+                            static_cast<int>(std::round(scene_pos.y())));
+
+    std::cout << "Simulating mouse press/release at scene pos ("
+              << window_pos.x() << ", " << window_pos.y() << ")\n";
+
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, window_pos);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, window_pos);
+
+    std::cout << "Notes in sequence after click: " << controller.active_sequence()->size() << "\n";
+    assert(controller.active_sequence()->size() == 1);
+
+    const auto& note = controller.active_sequence()->notes().front();
+    std::cout << "Created Note: id=" << note.note_id << " start=" << note.start.to_double()
+              << " dur=" << note.duration.to_double()
+              << " pitch=" << note.pitch << "\n";
+
+    assert(note.pitch == 60.0);
+    assert(note.duration == time::BeatDuration::from_fraction(1, 4));
+    assert(note.start == time::BeatPosition::from_fraction(1, 2));
+    const uint64_t note_id = note.note_id;
+
+    // 2. Test Move: Click inside note body and drag
+    // Note is at x=90..135, y=480..500. Click at (100, 490) (body, not resize handle).
+    const QPoint move_start_win(static_cast<int>(std::round(piano_roll->mapToScene(QPointF(100.0, 490.0)).x())),
+                                static_cast<int>(std::round(piano_roll->mapToScene(QPointF(100.0, 490.0)).y())));
+    // Drag to +1 beat (+180px) and +1 semitone (-20px): x=280, y=470
+    const QPoint move_end_win(static_cast<int>(std::round(piano_roll->mapToScene(QPointF(280.0, 470.0)).x())),
+                              static_cast<int>(std::round(piano_roll->mapToScene(QPointF(280.0, 470.0)).y())));
+
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, move_start_win);
+    QTest::mouseMove(window, move_end_win);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, move_end_win);
+
+    const auto* moved_note = controller.active_sequence()->find_note(note_id);
+    assert(moved_note != nullptr);
+    assert(moved_note->start == time::BeatPosition::from_fraction(3, 2)); // 1.5 beats
+    assert(moved_note->pitch == 61.0); // C#4
+
+    // 3. Test Resize: Drag right edge
+    // Note is now at x=270..315, y=460..480. Resize handle is x in [307..315]. Click at (312, 470).
+    const QPoint resize_start_win(static_cast<int>(std::round(piano_roll->mapToScene(QPointF(312.0, 470.0)).x())),
+                                  static_cast<int>(std::round(piano_roll->mapToScene(QPointF(312.0, 470.0)).y())));
+    // Drag to right: x=360 (new duration = 0.5 beats = 90px)
+    const QPoint resize_end_win(static_cast<int>(std::round(piano_roll->mapToScene(QPointF(360.0, 470.0)).x())),
+                                static_cast<int>(std::round(piano_roll->mapToScene(QPointF(360.0, 470.0)).y())));
+
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, resize_start_win);
+    QTest::mouseMove(window, resize_end_win);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, resize_end_win);
+
+    const auto* resized_note = controller.active_sequence()->find_note(note_id);
+    assert(resized_note != nullptr);
+    assert(resized_note->duration == time::BeatDuration::from_fraction(1, 2)); // 0.5 beats
+
+    // 4. Test Right Click Delete: Click on note body with RightButton
+    const QPoint delete_win(static_cast<int>(std::round(piano_roll->mapToScene(QPointF(280.0, 470.0)).x())),
+                            static_cast<int>(std::round(piano_roll->mapToScene(QPointF(280.0, 470.0)).y())));
+    QTest::mousePress(window, Qt::RightButton, Qt::NoModifier, delete_win);
+    QTest::mouseRelease(window, Qt::RightButton, Qt::NoModifier, delete_win);
+
+    assert(controller.active_sequence()->empty());
+
+    // 5. Test Playback after mouse creation
+    // Re-create note at (90, 480)
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, window_pos);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, window_pos);
+    assert(controller.active_sequence()->size() == 1);
+
+    controller.play();
+    assert(controller.isPlaying());
+
+    // Process a block in audio engine to verify RT playback pipeline
+    audio::AudioBuffer buffer(2, 64);
+    audio::ProcessContext ctx{48000.0, 64};
+    auto block = buffer.block(64);
+    engine.process(block, ctx);
+
+    controller.stop();
+    assert(!controller.isPlaying());
+
+    std::cout << "[PASS] test_j_mouse_pointer_integration\n";
+}
+
 int main(int argc, char* argv[]) {
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+    QGuiApplication app(argc, argv);
+    app.setApplicationName("SaudadeTest");
+
     test_a_coordinate_mapping();
     test_b_c_d_e_note_crud_operations();
     test_f_playback_preparation();
     test_g_h_repeated_playback_and_rt_safe_flush();
-    test_i_qt_gui_smoke_test(argc, argv);
+    test_i_qt_gui_smoke_test();
+    test_j_mouse_pointer_integration();
 
     std::cout << "ALL UI & EDITOR TESTS PASSED!\n";
     return 0;

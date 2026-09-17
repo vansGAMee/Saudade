@@ -49,7 +49,7 @@ ApplicationWindow {
                 width: 72
                 height: 30
                 radius: 4
-                color: controller.isPlaying ? "#2563eb" : "#27272a"
+                color: editorController.isPlaying ? "#2563eb" : "#27272a"
                 anchors.verticalCenter: parent.verticalCenter
 
                 Text {
@@ -63,7 +63,7 @@ ApplicationWindow {
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: controller.play()
+                    onClicked: editorController.play()
                 }
             }
 
@@ -73,7 +73,7 @@ ApplicationWindow {
                 width: 72
                 height: 30
                 radius: 4
-                color: !controller.isPlaying ? "#3f3f46" : "#27272a"
+                color: !editorController.isPlaying ? "#3f3f46" : "#27272a"
                 anchors.verticalCenter: parent.verticalCenter
 
                 Text {
@@ -87,7 +87,7 @@ ApplicationWindow {
                 MouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: controller.stop()
+                    onClicked: editorController.stop()
                 }
             }
         }
@@ -99,7 +99,7 @@ ApplicationWindow {
             spacing: 24
 
             Text {
-                text: controller.bpm.toFixed(0) + " BPM"
+                text: editorController.bpm.toFixed(0) + " BPM"
                 font.pixelSize: 13
                 font.bold: true
                 color: "#a1a1aa"
@@ -107,7 +107,7 @@ ApplicationWindow {
             }
 
             Text {
-                text: "Beat: " + controller.currentBeat.toFixed(2)
+                text: "Beat: " + editorController.currentBeat.toFixed(2)
                 font.pixelSize: 13
                 font.family: "Monospace"
                 color: "#71717a"
@@ -161,14 +161,15 @@ ApplicationWindow {
             clip: true
             boundsBehavior: Flickable.StopAtBounds
 
-            contentWidth: Math.max(width, controller.patternLength * centerArea.beatWidth)
+            contentWidth: Math.max(width, editorController.patternLength * centerArea.beatWidth)
             contentHeight: centerArea.contentHeightCalc
 
             PianoRollItem {
                 id: pianoRoll
+                objectName: "pianoRoll"
                 width: pianoRollFlickable.contentWidth
                 height: centerArea.contentHeightCalc
-                controller: controller
+                controller: editorController
                 rowHeight: centerArea.rowHeight
                 beatWidth: centerArea.beatWidth
                 minPitch: centerArea.minPitch

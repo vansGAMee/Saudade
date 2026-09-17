@@ -61,12 +61,14 @@ int main(int argc, char* argv[]) {
     // 4. Register custom C++ Scene Graph items
     qmlRegisterType<saudade::ui::PianoRollItem>("saudade.ui", 1, 0, "PianoRollItem");
     qmlRegisterType<saudade::ui::PianoKeysItem>("saudade.ui", 1, 0, "PianoKeysItem");
+    qmlRegisterUncreatableType<saudade::ui::EditorController>("saudade.ui", 1, 0, "EditorController", "C++ only");
 
     // 5. Create EditorController connecting model and audio engine
     saudade::ui::EditorController controller(engine, sample_rate);
 
     // 6. Initialize QML Application Engine
     QQmlApplicationEngine qml_engine;
+    qml_engine.rootContext()->setContextProperty("editorController", &controller);
     qml_engine.rootContext()->setContextProperty("controller", &controller);
 
     QUrl qml_url(QStringLiteral("qrc:/saudade/Main.qml"));

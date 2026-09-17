@@ -162,9 +162,19 @@ if(SAUDADE_BUILD_GUI)
             Qt6::Gui
             Qt6::Quick
             Qt6::Qml
+            Qt6::Test
+    )
+    target_compile_definitions(test_ui_editor
+        PRIVATE
+            SAUDADE_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
     )
     saudade_set_warnings(test_ui_editor)
     add_test(NAME ui_editor COMMAND test_ui_editor)
+    if(SAUDADE_ENABLE_TSAN)
+        set_tests_properties(ui_editor PROPERTIES
+            ENVIRONMENT "TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tsan_suppressions.supp"
+        )
+    endif()
 endif()
 
 

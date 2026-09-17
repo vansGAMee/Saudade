@@ -142,6 +142,7 @@ void PianoRollItem::mousePressEvent(QMouseEvent* event) {
             const auto dur = time::BeatDuration::from_fraction(1, 4); // 1/4 beat default
 
             drag_note_id_ = controller_->addNote(start_beat.to_double(), dur.to_double(), pitch);
+
             initial_note_start_ = start_beat;
             initial_note_pitch_ = pitch;
             initial_note_duration_ = dur;
