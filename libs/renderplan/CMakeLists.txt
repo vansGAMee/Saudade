@@ -9,4 +9,9 @@ target_include_directories(saudade_renderplan
         $<INSTALL_INTERFACE:include>
 )
 
+target_link_libraries(saudade_renderplan
+    PUBLIC
+        saudade_time
+)
+
 saudade_set_warnings(saudade_renderplan)

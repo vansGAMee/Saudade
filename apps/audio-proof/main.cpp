@@ -3,8 +3,11 @@
 #include <saudade/renderplan/render_plan.hpp>
 #include <saudade/audio/engine.hpp>
 #include <saudade/pipewire/pipewire_endpoint.hpp>
+#include <saudade/time/time_types.hpp>
+#include <saudade/time/transport.hpp>
 
 #include <iostream>
+#include <iomanip>
 #include <atomic>
 #include <csignal>
 #include <thread>
@@ -45,11 +48,11 @@ int main() {
     sigaction(SIGTERM, &sa, nullptr);
 
     try {
-        // 2. Compile Generation 1: 440 Hz
-        auto plan_gen1 = create_sine_plan(440.0f, -12.0f);
+        // 2. Compile RenderPlan: Sine 440 Hz -> Gain -12 dB -> Stereo
+        auto plan = create_sine_plan(440.0f, -12.0f);
 
-        // 3. Initialize AudioEngine with Generation 1
-        saudade::audio::AudioEngine engine(std::move(plan_gen1));
+        // 3. Initialize AudioEngine with initial plan
+        saudade::audio::AudioEngine engine(std::move(plan));
 
         // 4. Connect PipeWire boundary endpoint
         saudade::pipewire::PipeWireEndpoint endpoint(engine, "saudade-audio-proof");
@@ -60,50 +63,98 @@ int main() {
             std::cerr << "Warning: Waiting for audio device stream connection...\n";
         }
 
+        const double sr = endpoint.sample_rate() > 0 ? endpoint.sample_rate() : 48000.0;
+
         // 5. Print initial banner
-        std::cout << "Audio backend: PipeWire\n"
-                  << "Sample rate: " << endpoint.sample_rate() << "\n"
-                  << "Quantum: " << endpoint.quantum() << "\n"
-                  << "Generation 1 active: Sine(440 Hz) -> Gain(-12 dB) -> Output\n"
-                  << "Playing. Generation updates will occur automatically.\n"
+        std::cout << "==================================================\n"
+                  << "Saudade Audio Proof -- Milestone 3: Time & Transport\n"
+                  << "==================================================\n"
+                  << "Backend: PipeWire\n"
+                  << "Sample rate: " << endpoint.sample_rate() << " Hz\n"
+                  << "Quantum: " << endpoint.quantum() << " frames\n"
+                  << "Tempo: 120.0 BPM (1 beat = 0.5s = " << static_cast<int64_t>(0.5 * sr) << " samples)\n"
+                  << "Initial state: Stopped at sample 0 (silence)\n"
                   << "Press Ctrl+C to stop.\n"
+                  << "==================================================\n"
                   << std::flush;
 
-        // 6. Control thread loop for live plan swapping
-        int step = 0;
+        enum class DemoStep {
+            InitialSilence,
+            PlayingFirst,
+            StoppedMid,
+            SeekBeat4,
+            PlayingSecond,
+            Done
+        };
+
+        DemoStep step = DemoStep::InitialSilence;
         const auto start_time = std::chrono::steady_clock::now();
+        auto last_print_time = start_time;
 
         while (!g_stop.load(std::memory_order_relaxed)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::now() - start_time
-            ).count();
+            const auto now = std::chrono::steady_clock::now();
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time).count();
 
-            // At ~2.0s: compile and publish Generation 2 (660 Hz) on control thread
-            if (step == 0 && elapsed >= 2000) {
-                step = 1;
-                auto plan_gen2 = create_sine_plan(660.0f, -12.0f);
-                const auto gen = engine.publish_plan(std::move(plan_gen2));
-                std::cout << "Published generation " << gen << ": 660 Hz\n" << std::flush;
-            }
-            // At ~4.0s: compile and publish Generation 3 (440 Hz) on control thread
-            else if (step == 1 && elapsed >= 4000) {
-                step = 2;
-                auto plan_gen3 = create_sine_plan(440.0f, -12.0f);
-                const auto gen = engine.publish_plan(std::move(plan_gen3));
-                std::cout << "Published generation " << gen << ": 440 Hz\n" << std::flush;
+            // Periodic progress reporting every 500ms
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_print_time).count() >= 500) {
+                last_print_time = now;
+                const auto pos = engine.transport().current_sample();
+                const auto beat = engine.transport().current_beat(sr);
+                const char* state_str = engine.transport().is_playing() ? "PLAYING" : "STOPPED";
+                std::cout << "  [Transport] State: " << std::left << std::setw(8) << state_str
+                          << " | Pos: " << std::setw(8) << pos << " samples"
+                          << " | Beat: " << std::fixed << std::setprecision(2) << beat.to_double()
+                          << "\n" << std::flush;
             }
 
-            // Periodically collect retired plans on control thread
+            // Step 1: At ~0.8s, command Play()
+            if (step == DemoStep::InitialSilence && elapsed >= 800) {
+                step = DemoStep::PlayingFirst;
+                std::cout << ">>> [COMMAND] Play() -> 440 Hz tone starts, position advancing\n" << std::flush;
+                engine.play();
+            }
+            // Step 2: At ~2.8s, command Stop() -> position freezes, silence
+            else if (step == DemoStep::PlayingFirst && elapsed >= 2800) {
+                step = DemoStep::StoppedMid;
+                engine.stop();
+                const auto freeze_pos = engine.transport().current_sample();
+                const auto freeze_beat = engine.transport().current_beat(sr);
+                std::cout << ">>> [COMMAND] Stop() -> Audio silenced, position frozen at "
+                          << freeze_pos << " samples (" << std::fixed << std::setprecision(2)
+                          << freeze_beat.to_double() << " beats)\n" << std::flush;
+            }
+            // Step 3: At ~3.8s, command Seek to Beat 4
+            else if (step == DemoStep::StoppedMid && elapsed >= 3800) {
+                step = DemoStep::SeekBeat4;
+                const auto target_beat = saudade::time::BeatPosition::from_beats(4);
+                engine.seek_beats(target_beat, sr);
+                const auto target_sample = engine.transport().current_sample();
+                std::cout << ">>> [COMMAND] Seek to Beat 4.0 -> Sample position updated to "
+                          << target_sample << "\n" << std::flush;
+            }
+            // Step 4: At ~4.3s, command Play() -> resumes from Beat 4
+            else if (step == DemoStep::SeekBeat4 && elapsed >= 4300) {
+                step = DemoStep::PlayingSecond;
+                std::cout << ">>> [COMMAND] Play() -> Resuming playback from Beat 4.0\n" << std::flush;
+                engine.play();
+            }
+            // Step 5: At ~6.5s, demonstration complete
+            else if (step == DemoStep::PlayingSecond && elapsed >= 6500) {
+                step = DemoStep::Done;
+                std::cout << ">>> Demonstration complete. Stopping transport.\n" << std::flush;
+                engine.stop();
+                break;
+            }
+
+            // Periodically collect retired plans
             engine.collect_retired();
         }
 
-        std::cout << "\nStopping playback...\n";
+        std::cout << "\nStopping PipeWire endpoint...\n";
         endpoint.stop();
-        // Post-quiescence reclamation: collect any remaining retired plans
         engine.collect_retired();
-        std::cout << "Playback cleanly stopped. Retired count: "
-                  << engine.publisher().retired_count() << "\n";
+        std::cout << "Audio endpoint cleanly stopped. Shutdown complete.\n";
 
     } catch (const std::exception& ex) {
         std::cerr << "Fatal error: " << ex.what() << "\n";

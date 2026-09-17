@@ -55,6 +55,7 @@ if(SAUDADE_ENABLE_TSAN)
 endif()
 
 # Core libraries (pure C++, no PipeWire dependency)
+add_subdirectory(libs/time)
 add_subdirectory(libs/audio)
 add_subdirectory(libs/renderplan)
 add_subdirectory(libs/graph)

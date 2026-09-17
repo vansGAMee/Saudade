@@ -73,3 +73,26 @@ target_link_libraries(test_stress_concurrency
 )
 saudade_set_warnings(test_stress_concurrency)
 add_test(NAME stress_concurrency COMMAND test_stress_concurrency)
+
+add_executable(test_time_and_tempo
+    test_time_and_tempo.cpp
+)
+target_link_libraries(test_time_and_tempo
+    PRIVATE
+        saudade_time
+)
+saudade_set_warnings(test_time_and_tempo)
+add_test(NAME time_and_tempo COMMAND test_time_and_tempo)
+
+add_executable(test_transport
+    test_transport.cpp
+)
+target_link_libraries(test_transport
+    PRIVATE
+        saudade_graph
+        saudade_audio
+        saudade_time
+)
+saudade_set_warnings(test_transport)
+add_test(NAME transport COMMAND test_transport)
+

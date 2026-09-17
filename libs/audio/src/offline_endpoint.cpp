@@ -17,10 +17,14 @@ OfflineEndpoint::OfflineEndpoint(AudioEngine& engine,
 
 void OfflineEndpoint::start() {
     running_ = true;
+    if (!engine_.transport().is_playing()) {
+        engine_.transport().play();
+    }
 }
 
 void OfflineEndpoint::stop() {
     running_ = false;
+    engine_.transport().stop();
 }
 
 void OfflineEndpoint::reset() {
@@ -28,6 +32,7 @@ void OfflineEndpoint::reset() {
         ch.clear();
     }
     engine_.reset();
+    engine_.transport().seek_samples(0);
 }
 
 void OfflineEndpoint::render_blocks(size_t num_blocks) {
