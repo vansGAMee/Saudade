@@ -96,3 +96,30 @@ target_link_libraries(test_transport
 saudade_set_warnings(test_transport)
 add_test(NAME transport COMMAND test_transport)
 
+add_executable(test_events
+    test_events.cpp
+)
+target_link_libraries(test_events
+    PRIVATE
+        saudade_graph
+        saudade_audio
+        saudade_time
+        saudade_events
+)
+saudade_set_warnings(test_events)
+add_test(NAME events COMMAND test_events)
+
+add_executable(test_poly_synth
+    test_poly_synth.cpp
+)
+target_link_libraries(test_poly_synth
+    PRIVATE
+        saudade_graph
+        saudade_audio
+        saudade_time
+        saudade_events
+)
+saudade_set_warnings(test_poly_synth)
+add_test(NAME poly_synth COMMAND test_poly_synth)
+
+

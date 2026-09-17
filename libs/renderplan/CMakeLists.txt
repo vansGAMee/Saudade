@@ -12,6 +12,7 @@ target_include_directories(saudade_renderplan
 target_link_libraries(saudade_renderplan
     PUBLIC
         saudade_time
+        saudade_events
 )
 
 saudade_set_warnings(saudade_renderplan)

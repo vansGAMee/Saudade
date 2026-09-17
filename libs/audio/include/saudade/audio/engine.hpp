@@ -6,6 +6,8 @@
 #include <saudade/audio/plan_publisher.hpp>
 #include <saudade/renderplan/render_plan.hpp>
 #include <saudade/time/transport.hpp>
+#include <saudade/events/event_queue.hpp>
+#include <saudade/events/event_block.hpp>
 
 #include <memory>
 #include <cstdint>
@@ -13,8 +15,9 @@
 namespace saudade::audio {
 
 /// Audio engine executing precompiled, immutable RenderPlans.
-/// Supports live atomic replacement of the active plan at quantum boundaries
-/// and timeline transport control with zero allocations and zero locks on the realtime path.
+/// Supports live atomic replacement of the active plan at quantum boundaries,
+/// timeline transport control, and sample-accurate event ingress
+/// with zero allocations and zero locks on the realtime path.
 class AudioEngine {
 public:
     static constexpr uint32_t kDefaultMaxBlockSize = 8192;
@@ -48,9 +51,26 @@ public:
     /// Control-thread transport operations.
     void play() noexcept { transport_.play(); }
     void stop() noexcept { transport_.stop(); }
-    void seek_samples(time::SamplePosition pos) noexcept { transport_.seek_samples(pos); }
+    void seek_samples(time::SamplePosition pos) noexcept {
+        transport_.seek_samples(pos);
+        event_queue_.reset_schedule_tracking(pos);
+    }
     void seek_beats(time::BeatPosition beat, double sample_rate) noexcept {
-        transport_.seek_beats(beat, sample_rate);
+        const auto sample_pos = transport_.tempo_map().beat_to_sample(beat, sample_rate);
+        seek_samples(sample_pos);
+    }
+
+    /// Control-thread event scheduling API.
+    bool schedule_note_on(time::SamplePosition pos, events::NoteId id, double pitch, float velocity) noexcept {
+        return event_queue_.schedule_note_on(pos, id, pitch, velocity);
+    }
+
+    bool schedule_note_off(time::SamplePosition pos, events::NoteId id, float release_velocity = 0.0f) noexcept {
+        return event_queue_.schedule_note_off(pos, id, release_velocity);
+    }
+
+    bool schedule_event(const events::TimelineEvent& event) noexcept {
+        return event_queue_.schedule_event(event);
     }
 
     /// Returns the currently active RenderPlan.
@@ -64,12 +84,18 @@ public:
     [[nodiscard]] time::TransportController& transport() noexcept { return transport_; }
     [[nodiscard]] const time::TransportController& transport() const noexcept { return transport_; }
 
+    /// Accesses the EventQueue.
+    [[nodiscard]] events::EventQueue& event_queue() noexcept { return event_queue_; }
+    [[nodiscard]] const events::EventQueue& event_queue() const noexcept { return event_queue_; }
+
     [[nodiscard]] uint32_t max_block_size() const noexcept { return max_block_size_; }
 
 private:
     uint32_t max_block_size_{kDefaultMaxBlockSize};
     PlanPublisher publisher_;
     time::TransportController transport_;
+    events::EventQueue event_queue_;
+    events::EventBlock quantum_event_block_;
 };
 
 } // namespace saudade::audio

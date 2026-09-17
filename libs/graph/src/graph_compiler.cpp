@@ -55,6 +55,10 @@ std::unique_ptr<renderplan::RenderPlan> GraphCompiler::compile(const GraphModel&
                 if (conn.from_port != SineNode::kPortOut) {
                     throw GraphCompilationException("Invalid output port for SineNode: " + conn.from_port);
                 }
+            } else if constexpr (std::is_same_v<T, PolySynthNode>) {
+                if (conn.from_port != PolySynthNode::kPortOut) {
+                    throw GraphCompilationException("Invalid output port for PolySynthNode: " + conn.from_port);
+                }
             } else if constexpr (std::is_same_v<T, GainNode>) {
                 if (conn.from_port != GainNode::kPortOut) {
                     throw GraphCompilationException("Invalid output port for GainNode: " + conn.from_port);
@@ -69,6 +73,8 @@ std::unique_ptr<renderplan::RenderPlan> GraphCompiler::compile(const GraphModel&
             using T = std::decay_t<decltype(dst_node)>;
             if constexpr (std::is_same_v<T, SineNode>) {
                 throw GraphCompilationException("SineNode has no input ports");
+            } else if constexpr (std::is_same_v<T, PolySynthNode>) {
+                throw GraphCompilationException("PolySynthNode has no input ports");
             } else if constexpr (std::is_same_v<T, GainNode>) {
                 if (conn.to_port != GainNode::kPortIn) {
                     throw GraphCompilationException("Invalid input port for GainNode: " + conn.to_port);
@@ -147,6 +153,7 @@ std::unique_ptr<renderplan::RenderPlan> GraphCompiler::compile(const GraphModel&
     std::map<NodeId, uint32_t> node_output_slots;
     uint32_t next_scratch_slot = 0;
     size_t next_sine_state = 0;
+    size_t next_synth_state = 0;
     std::vector<renderplan::ExecutionStep> steps;
 
     for (const NodeId id : execution_order) {
@@ -161,6 +168,15 @@ std::unique_ptr<renderplan::RenderPlan> GraphCompiler::compile(const GraphModel&
                 const uint32_t state_idx = static_cast<uint32_t>(next_sine_state++);
                 steps.push_back(renderplan::SineStep{
                     .frequency = node.frequency,
+                    .output_buffer_slot = out_slot,
+                    .state_index = state_idx
+                });
+            } else if constexpr (std::is_same_v<T, PolySynthNode>) {
+                const uint32_t out_slot = next_scratch_slot++;
+                node_output_slots[id] = out_slot;
+
+                const uint32_t state_idx = static_cast<uint32_t>(next_synth_state++);
+                steps.push_back(renderplan::PolySynthStep{
                     .output_buffer_slot = out_slot,
                     .state_index = state_idx
                 });
@@ -200,7 +216,8 @@ std::unique_ptr<renderplan::RenderPlan> GraphCompiler::compile(const GraphModel&
         std::move(steps),
         next_scratch_slot,
         next_sine_state,
-        /*output_channels=*/2
+        /*output_channels=*/2,
+        next_synth_state
     );
 }
 

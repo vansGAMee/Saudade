@@ -8,6 +8,7 @@ target_link_libraries(audio-proof
         saudade_audio
         saudade_pipewire
         saudade_time
+        saudade_events
 )
 
 saudade_set_warnings(audio-proof)

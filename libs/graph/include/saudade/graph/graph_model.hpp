@@ -14,6 +14,7 @@ public:
     GraphModel() = default;
 
     NodeId add_sine_node(float frequency = 440.0f);
+    NodeId add_poly_synth_node();
     NodeId add_gain_node(float gain_db = -12.0f);
     NodeId add_output_node(size_t channels = 2);
 

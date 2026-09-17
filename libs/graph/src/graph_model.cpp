@@ -9,6 +9,12 @@ NodeId GraphModel::add_sine_node(float frequency) {
     return id;
 }
 
+NodeId GraphModel::add_poly_synth_node() {
+    const NodeId id = next_id_++;
+    nodes_[id] = NodeRecord{id, PolySynthNode{}};
+    return id;
+}
+
 NodeId GraphModel::add_gain_node(float gain_db) {
     const NodeId id = next_id_++;
     nodes_[id] = NodeRecord{id, GainNode{gain_db}};

@@ -27,7 +27,11 @@ struct OutputNode {
     static constexpr const char* kPortRight = "right";
 };
 
-using NodeData = std::variant<SineNode, GainNode, OutputNode>;
+struct PolySynthNode {
+    static constexpr const char* kPortOut = "out";
+};
+
+using NodeData = std::variant<SineNode, GainNode, OutputNode, PolySynthNode>;
 
 struct NodeRecord {
     NodeId id{0};

@@ -26,6 +26,12 @@ struct RouteStep {
     uint32_t destination_channel{0};
 };
 
-using ExecutionStep = std::variant<SineStep, GainStep, RouteStep>;
+/// Parameters for a minimal polyphonic synthesizer execution step.
+struct PolySynthStep {
+    uint32_t output_buffer_slot{0};
+    uint32_t state_index{0};
+};
+
+using ExecutionStep = std::variant<SineStep, GainStep, RouteStep, PolySynthStep>;
 
 } // namespace saudade::renderplan

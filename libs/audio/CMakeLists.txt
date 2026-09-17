@@ -16,6 +16,7 @@ target_link_libraries(saudade_audio
     PUBLIC
         saudade_renderplan
         saudade_time
+        saudade_events
 )
 
 saudade_set_warnings(saudade_audio)
