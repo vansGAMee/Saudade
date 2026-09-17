@@ -4,9 +4,10 @@
 namespace saudade::audio {
 
 PlanPublisher::PlanPublisher() {
-    if (!active_plan_.is_lock_free() || !completed_generation_.is_lock_free()) {
-        throw std::runtime_error("Realtime atomic primitives are not lock-free on this platform");
-    }
+    static_assert(decltype(active_plan_)::is_always_lock_free,
+                  "active_plan_ must be lock-free on this platform");
+    static_assert(decltype(completed_generation_)::is_always_lock_free,
+                  "completed_generation_ must be lock-free on this platform");
 }
 
 PlanPublisher::~PlanPublisher() {
