@@ -16,7 +16,7 @@ PlanPublisher::~PlanPublisher() {
     retired_plans_.clear();
 }
 
-PlanGeneration PlanPublisher::publish(std::shared_ptr<const renderplan::RenderPlan> plan,
+PlanGeneration PlanPublisher::publish(std::unique_ptr<const renderplan::RenderPlan> plan,
                                       uint32_t max_block_size) {
     if (!plan) {
         throw std::invalid_argument("Cannot publish null RenderPlan");
@@ -53,6 +53,13 @@ PlanGeneration PlanPublisher::publish(std::shared_ptr<const renderplan::RenderPl
     active_plan_.store(raw_ptr, std::memory_order_release);
 
     return gen;
+}
+
+void PlanPublisher::prepare(uint32_t max_block_size) {
+    std::lock_guard<std::mutex> lock(control_mutex_);
+    if (active_holder_ && active_holder_->plan) {
+        active_holder_->scratch_buffers.resize(active_holder_->plan->num_scratch_buffers(), max_block_size);
+    }
 }
 
 size_t PlanPublisher::collect_retired() {
@@ -100,11 +107,6 @@ const renderplan::RenderPlan& PlanPublisher::active_plan() const {
         throw std::runtime_error("No active RenderPlan published");
     }
     return *active_holder_->plan;
-}
-
-std::shared_ptr<const renderplan::RenderPlan> PlanPublisher::active_plan_shared() const {
-    std::lock_guard<std::mutex> lock(control_mutex_);
-    return active_holder_ ? active_holder_->plan : nullptr;
 }
 
 void PlanPublisher::reset_active_dsp_state() {

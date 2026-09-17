@@ -16,9 +16,10 @@ using PlanGeneration = uint64_t;
 
 /// An execution package preallocated for a specific RenderPlan generation.
 /// Prepared entirely on the control thread before publication to the realtime thread.
+/// Uniquely owns the RenderPlan and its runtime execution resources.
 struct PreparedPlan {
     PlanGeneration generation{0};
-    std::shared_ptr<const renderplan::RenderPlan> plan;
+    std::unique_ptr<const renderplan::RenderPlan> plan;
     renderplan::DspStateStorage dsp_state;
     audio::AudioBuffer scratch_buffers;
 
@@ -27,9 +28,10 @@ struct PreparedPlan {
 };
 
 /// Lock-free exchange and lifetime manager for immutable RenderPlans.
+/// Control side uniquely owns the plans; realtime thread observes via raw pointer.
 ///
 /// Publication protocol (Control thread):
-/// 1. Preallocates and configures PreparedPlan completely.
+/// 1. Preallocates and configures PreparedPlan completely with unique plan ownership.
 /// 2. Sets retire_barrier_generation on current active plan to the new generation.
 /// 3. Moves old plan to retired list.
 /// 4. Release-stores pointer to new plan into active_plan_.
@@ -54,9 +56,12 @@ public:
 
     // --- Control-thread API ---
 
-    /// Prepares and atomically publishes a new RenderPlan generation.
+    /// Prepares and atomically publishes a new RenderPlan generation with unique ownership.
     /// Allocates DSP state and scratch buffers prior to publication.
-    PlanGeneration publish(std::shared_ptr<const renderplan::RenderPlan> plan, uint32_t max_block_size);
+    PlanGeneration publish(std::unique_ptr<const renderplan::RenderPlan> plan, uint32_t max_block_size);
+
+    /// Prepares buffers of the active plan for a new maximum block size. Outside realtime path.
+    void prepare(uint32_t max_block_size);
 
     /// Collects and destroys retired plans that are no longer referenced by the realtime thread.
     /// Returns the number of plans reclaimed.
@@ -76,9 +81,6 @@ public:
 
     /// Accesses the active RenderPlan on the control side.
     [[nodiscard]] const renderplan::RenderPlan& active_plan() const;
-
-    /// Accesses the shared pointer to the active RenderPlan on the control side.
-    [[nodiscard]] std::shared_ptr<const renderplan::RenderPlan> active_plan_shared() const;
 
     /// Resets the DSP runtime state of the active plan. Outside realtime path.
     void reset_active_dsp_state();

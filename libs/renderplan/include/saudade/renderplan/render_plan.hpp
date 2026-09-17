@@ -21,6 +21,13 @@ public:
                size_t num_sine_states,
                size_t output_channels);
 
+    virtual ~RenderPlan() = default;
+
+    RenderPlan(const RenderPlan&) = default;
+    RenderPlan& operator=(const RenderPlan&) = default;
+    RenderPlan(RenderPlan&&) noexcept = default;
+    RenderPlan& operator=(RenderPlan&&) noexcept = default;
+
     [[nodiscard]] const std::vector<ExecutionStep>& steps() const noexcept { return steps_; }
     [[nodiscard]] uint32_t num_scratch_buffers() const noexcept { return num_scratch_buffers_; }
     [[nodiscard]] size_t num_sine_states() const noexcept { return num_sine_states_; }

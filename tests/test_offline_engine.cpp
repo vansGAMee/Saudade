@@ -7,11 +7,11 @@
 #include <cmath>
 #include <iostream>
 #include <vector>
+#include <memory>
 
-void test_offline_render_properties() {
-    std::cout << "[RUN] test_offline_render_properties\n";
+namespace {
 
-    // Construct graph: Sine(440 Hz) -> Gain(-12 dB) -> Output(2)
+std::unique_ptr<saudade::renderplan::RenderPlan> make_sine_plan() {
     saudade::graph::GraphModel graph;
     const auto sine = graph.add_sine_node(440.0f);
     const auto gain = graph.add_gain_node(-12.0f);
@@ -24,8 +24,16 @@ void test_offline_render_properties() {
     graph.connect(gain, saudade::graph::GainNode::kPortOut,
                   out, saudade::graph::OutputNode::kPortRight);
 
-    auto plan = saudade::graph::GraphCompiler::compile(graph);
-    saudade::audio::AudioEngine engine(plan);
+    return saudade::graph::GraphCompiler::compile(graph);
+}
+
+} // namespace
+
+void test_offline_render_properties() {
+    std::cout << "[RUN] test_offline_render_properties\n";
+
+    auto plan = make_sine_plan();
+    saudade::audio::AudioEngine engine(std::move(plan));
 
     const double sample_rate = 48000.0;
     const uint32_t quantum = 256;
@@ -89,29 +97,17 @@ void test_offline_render_properties() {
 void test_block_continuity() {
     std::cout << "[RUN] test_block_continuity\n";
 
-    saudade::graph::GraphModel graph;
-    const auto sine = graph.add_sine_node(440.0f);
-    const auto gain = graph.add_gain_node(-12.0f);
-    const auto out = graph.add_output_node(2);
-
-    graph.connect(sine, saudade::graph::SineNode::kPortOut,
-                  gain, saudade::graph::GainNode::kPortIn);
-    graph.connect(gain, saudade::graph::GainNode::kPortOut,
-                  out, saudade::graph::OutputNode::kPortLeft);
-    graph.connect(gain, saudade::graph::GainNode::kPortOut,
-                  out, saudade::graph::OutputNode::kPortRight);
-
-    auto plan = saudade::graph::GraphCompiler::compile(graph);
-
     const double sample_rate = 48000.0;
 
     // Run 1: render two 128-frame blocks (128 + 128 = 256 frames total)
-    saudade::audio::AudioEngine engine_blocks(plan);
+    auto plan_blocks = make_sine_plan();
+    saudade::audio::AudioEngine engine_blocks(std::move(plan_blocks));
     saudade::audio::OfflineEndpoint ep_blocks(engine_blocks, sample_rate, 128, 2);
     ep_blocks.render_blocks(2);
 
     // Run 2: render one 256-frame block
-    saudade::audio::AudioEngine engine_continuous(plan);
+    auto plan_continuous = make_sine_plan();
+    saudade::audio::AudioEngine engine_continuous(std::move(plan_continuous));
     saudade::audio::OfflineEndpoint ep_continuous(engine_continuous, sample_rate, 256, 2);
     ep_continuous.render_blocks(1);
 

@@ -18,7 +18,7 @@ class AudioEngine {
 public:
     static constexpr uint32_t kDefaultMaxBlockSize = 8192;
 
-    explicit AudioEngine(std::shared_ptr<const renderplan::RenderPlan> initial_plan,
+    explicit AudioEngine(std::unique_ptr<const renderplan::RenderPlan> initial_plan,
                          uint32_t max_block_size = kDefaultMaxBlockSize);
 
     ~AudioEngine() = default;
@@ -38,8 +38,8 @@ public:
     /// Snapshots active plan once at quantum start and acknowledges generation on completion.
     void process(AudioBlock& output_block, const ProcessContext& ctx) noexcept;
 
-    /// Publishes a new RenderPlan generation from the control thread.
-    PlanGeneration publish_plan(std::shared_ptr<const renderplan::RenderPlan> new_plan);
+    /// Publishes a new RenderPlan generation with unique ownership from the control thread.
+    PlanGeneration publish_plan(std::unique_ptr<const renderplan::RenderPlan> new_plan);
 
     /// Collects and destroys retired plans outside the realtime path.
     size_t collect_retired();

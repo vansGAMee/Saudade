@@ -4,7 +4,7 @@
 
 namespace saudade::audio {
 
-AudioEngine::AudioEngine(std::shared_ptr<const renderplan::RenderPlan> initial_plan,
+AudioEngine::AudioEngine(std::unique_ptr<const renderplan::RenderPlan> initial_plan,
                          uint32_t max_block_size)
     : max_block_size_(max_block_size) {
     assert(initial_plan != nullptr);
@@ -13,17 +13,14 @@ AudioEngine::AudioEngine(std::shared_ptr<const renderplan::RenderPlan> initial_p
 
 void AudioEngine::prepare(uint32_t max_block_size) {
     max_block_size_ = max_block_size;
-    auto cur_plan = publisher_.active_plan_shared();
-    if (cur_plan) {
-        publisher_.publish(cur_plan, max_block_size_);
-    }
+    publisher_.prepare(max_block_size_);
 }
 
 void AudioEngine::reset() {
     publisher_.reset_active_dsp_state();
 }
 
-PlanGeneration AudioEngine::publish_plan(std::shared_ptr<const renderplan::RenderPlan> new_plan) {
+PlanGeneration AudioEngine::publish_plan(std::unique_ptr<const renderplan::RenderPlan> new_plan) {
     return publisher_.publish(std::move(new_plan), max_block_size_);
 }
 

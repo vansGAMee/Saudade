@@ -9,6 +9,7 @@
 #include <csignal>
 #include <thread>
 #include <chrono>
+#include <memory>
 
 namespace {
 std::atomic<bool> g_stop{false};
@@ -17,7 +18,7 @@ extern "C" void signal_handler(int /*sig*/) {
     g_stop.store(true, std::memory_order_relaxed);
 }
 
-std::shared_ptr<saudade::renderplan::RenderPlan> create_sine_plan(float frequency_hz, float gain_db) {
+std::unique_ptr<saudade::renderplan::RenderPlan> create_sine_plan(float frequency_hz, float gain_db) {
     saudade::graph::GraphModel graph;
     const auto sine_node = graph.add_sine_node(frequency_hz);
     const auto gain_node = graph.add_gain_node(gain_db);
@@ -48,7 +49,7 @@ int main() {
         auto plan_gen1 = create_sine_plan(440.0f, -12.0f);
 
         // 3. Initialize AudioEngine with Generation 1
-        saudade::audio::AudioEngine engine(plan_gen1);
+        saudade::audio::AudioEngine engine(std::move(plan_gen1));
 
         // 4. Connect PipeWire boundary endpoint
         saudade::pipewire::PipeWireEndpoint endpoint(engine, "saudade-audio-proof");
@@ -82,14 +83,14 @@ int main() {
             if (step == 0 && elapsed >= 2000) {
                 step = 1;
                 auto plan_gen2 = create_sine_plan(660.0f, -12.0f);
-                const auto gen = engine.publish_plan(plan_gen2);
+                const auto gen = engine.publish_plan(std::move(plan_gen2));
                 std::cout << "Published generation " << gen << ": 660 Hz\n" << std::flush;
             }
             // At ~4.0s: compile and publish Generation 3 (440 Hz) on control thread
             else if (step == 1 && elapsed >= 4000) {
                 step = 2;
                 auto plan_gen3 = create_sine_plan(440.0f, -12.0f);
-                const auto gen = engine.publish_plan(plan_gen3);
+                const auto gen = engine.publish_plan(std::move(plan_gen3));
                 std::cout << "Published generation " << gen << ": 440 Hz\n" << std::flush;
             }
 

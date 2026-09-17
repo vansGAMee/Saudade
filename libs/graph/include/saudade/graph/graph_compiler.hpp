@@ -17,9 +17,9 @@ public:
 /// Validates an editable GraphModel and compiles it into an immutable RenderPlan.
 class GraphCompiler {
 public:
-    /// Compiles graph into an immutable RenderPlan.
+    /// Compiles graph into an immutable RenderPlan with unique ownership transferred to caller.
     /// Throws GraphCompilationException if validation fails.
-    [[nodiscard]] static std::shared_ptr<renderplan::RenderPlan> compile(const GraphModel& graph);
+    [[nodiscard]] static std::unique_ptr<renderplan::RenderPlan> compile(const GraphModel& graph);
 };
 
 } // namespace saudade::graph

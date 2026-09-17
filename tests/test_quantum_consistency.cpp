@@ -9,10 +9,11 @@
 #include <thread>
 #include <atomic>
 #include <vector>
+#include <memory>
 
 namespace {
 
-std::shared_ptr<saudade::renderplan::RenderPlan> make_plan_with_gain(float gain_db) {
+std::unique_ptr<saudade::renderplan::RenderPlan> make_plan_with_gain(float gain_db) {
     saudade::graph::GraphModel graph;
     const auto sine = graph.add_sine_node(440.0f);
     const auto gain = graph.add_gain_node(gain_db);
@@ -36,7 +37,7 @@ void test_quantum_snapshot_atomicity() {
     auto plan1 = make_plan_with_gain(0.0f);   // Linear gain 1.0
     auto plan2 = make_plan_with_gain(-6.0f);  // Linear gain ~0.501187
 
-    saudade::audio::AudioEngine engine(plan1);
+    saudade::audio::AudioEngine engine(std::move(plan1));
 
     const uint32_t quantum = 256;
     saudade::audio::AudioBuffer buffer(2, quantum);
@@ -48,7 +49,7 @@ void test_quantum_snapshot_atomicity() {
     assert(snap->generation == 1);
 
     // 2. Control publishes Generation 2 while quantum is "in progress"
-    const auto gen2 = engine.publish_plan(plan2);
+    const auto gen2 = engine.publish_plan(std::move(plan2));
     assert(gen2 == 2);
     assert(engine.publisher().active_generation() == 2);
 
@@ -79,9 +80,8 @@ void test_concurrent_quantum_consistency() {
     std::cout << "[RUN] test_concurrent_quantum_consistency\n";
 
     auto plan_a = make_plan_with_gain(0.0f);
-    auto plan_b = make_plan_with_gain(-12.0f);
 
-    saudade::audio::AudioEngine engine(plan_a);
+    saudade::audio::AudioEngine engine(std::move(plan_a));
 
     const uint32_t quantum = 128;
     saudade::audio::AudioBuffer buffer(2, quantum);
@@ -103,9 +103,9 @@ void test_concurrent_quantum_consistency() {
     // Publisher thread: continuously swaps between plan A and plan B
     for (int i = 0; i < 100; ++i) {
         if (i % 2 == 0) {
-            engine.publish_plan(plan_b);
+            engine.publish_plan(make_plan_with_gain(-12.0f));
         } else {
-            engine.publish_plan(plan_a);
+            engine.publish_plan(make_plan_with_gain(0.0f));
         }
         engine.collect_retired();
         std::this_thread::sleep_for(std::chrono::microseconds(200));

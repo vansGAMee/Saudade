@@ -7,10 +7,11 @@
 #include <cassert>
 #include <iostream>
 #include <vector>
+#include <memory>
 
 namespace {
 
-std::shared_ptr<saudade::renderplan::RenderPlan> make_sine_plan(float freq) {
+std::unique_ptr<saudade::renderplan::RenderPlan> make_sine_plan(float freq) {
     saudade::graph::GraphModel graph;
     const auto sine = graph.add_sine_node(freq);
     const auto gain = graph.add_gain_node(-12.0f);
@@ -32,7 +33,7 @@ void test_zero_realtime_allocations() {
     std::cout << "[RUN] test_zero_realtime_allocations\n";
 
     auto plan = make_sine_plan(440.0f);
-    saudade::audio::AudioEngine engine(plan);
+    saudade::audio::AudioEngine engine(std::move(plan));
 
     const uint32_t quantum = 512;
     saudade::audio::AudioBuffer out_buffer(2, quantum);
@@ -58,7 +59,7 @@ void test_zero_allocations_during_plan_swaps() {
     auto plan2 = make_sine_plan(660.0f);
     auto plan3 = make_sine_plan(880.0f);
 
-    saudade::audio::AudioEngine engine(plan1);
+    saudade::audio::AudioEngine engine(std::move(plan1));
 
     const uint32_t quantum = 256;
     saudade::audio::AudioBuffer out_buffer(2, quantum);
@@ -72,14 +73,14 @@ void test_zero_allocations_during_plan_swaps() {
     assert(saudade::audio::get_realtime_allocation_count() == 0);
 
     // 2. Publish plan 2 (allocation outside RT guard is normal)
-    engine.publish_plan(plan2);
+    engine.publish_plan(std::move(plan2));
 
     // 3. Process block immediately following publication
     engine.process(block, ctx);
     assert(saudade::audio::get_realtime_allocation_count() == 0);
 
     // 4. Publish plan 3
-    engine.publish_plan(plan3);
+    engine.publish_plan(std::move(plan3));
 
     // 5. Process block on plan 3
     engine.process(block, ctx);

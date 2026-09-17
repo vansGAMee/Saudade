@@ -8,10 +8,11 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
+#include <memory>
 
 namespace {
 
-std::shared_ptr<saudade::renderplan::RenderPlan> make_plan(float freq) {
+std::unique_ptr<saudade::renderplan::RenderPlan> make_plan(float freq) {
     saudade::graph::GraphModel graph;
     const auto sine = graph.add_sine_node(freq);
     const auto gain = graph.add_gain_node(-12.0f);
@@ -27,13 +28,23 @@ std::shared_ptr<saudade::renderplan::RenderPlan> make_plan(float freq) {
     return saudade::graph::GraphCompiler::compile(graph);
 }
 
+// Local test-only wrapper to track destruction without polluting production code
+struct TrackedPlan : public saudade::renderplan::RenderPlan {
+    TrackedPlan(saudade::renderplan::RenderPlan base, std::atomic<size_t>& counter)
+        : saudade::renderplan::RenderPlan(std::move(base)), counter_(counter) {}
+    ~TrackedPlan() override {
+        counter_.fetch_add(1, std::memory_order_relaxed);
+    }
+    std::atomic<size_t>& counter_;
+};
+
 } // namespace
 
 void test_single_publication_and_observation() {
     std::cout << "[RUN] test_single_publication_and_observation\n";
 
     auto plan1 = make_plan(440.0f);
-    saudade::audio::AudioEngine engine(plan1);
+    saudade::audio::AudioEngine engine(std::move(plan1));
 
     assert(engine.publisher().active_generation() == 1);
     assert(engine.publisher().completed_generation() == 0);
@@ -49,7 +60,7 @@ void test_single_publication_and_observation() {
 
     // 2. Control publishes Generation 2
     auto plan2 = make_plan(660.0f);
-    const auto gen2 = engine.publish_plan(plan2);
+    const auto gen2 = engine.publish_plan(std::move(plan2));
     assert(gen2 == 2);
     assert(engine.publisher().active_generation() == 2);
     assert(engine.publisher().retired_count() == 1);
@@ -75,7 +86,7 @@ void test_rapid_publication() {
     std::cout << "[RUN] test_rapid_publication\n";
 
     auto initial_plan = make_plan(440.0f);
-    saudade::audio::AudioEngine engine(initial_plan);
+    saudade::audio::AudioEngine engine(std::move(initial_plan));
 
     const uint32_t quantum = 128;
     saudade::audio::AudioBuffer buffer(2, quantum);
@@ -98,7 +109,7 @@ void test_rapid_publication() {
     saudade::audio::PlanGeneration last_gen = 1;
     for (int i = 0; i < 50; ++i) {
         auto p = make_plan(440.0f + static_cast<float>(i) * 10.0f);
-        last_gen = engine.publish_plan(p);
+        last_gen = engine.publish_plan(std::move(p));
         engine.collect_retired();
     }
 
@@ -129,33 +140,30 @@ void test_rapid_publication() {
 void test_shutdown_reclamation() {
     std::cout << "[RUN] test_shutdown_reclamation\n";
 
-    std::weak_ptr<const saudade::renderplan::RenderPlan> weak_gen1;
-    std::weak_ptr<const saudade::renderplan::RenderPlan> weak_gen2;
-    std::weak_ptr<const saudade::renderplan::RenderPlan> weak_gen3;
+    std::atomic<size_t> destroyed1{0};
+    std::atomic<size_t> destroyed2{0};
+    std::atomic<size_t> destroyed3{0};
 
     {
-        auto p1 = make_plan(220.0f);
-        weak_gen1 = p1;
-        saudade::audio::AudioEngine engine(p1);
+        auto p1 = std::make_unique<TrackedPlan>(std::move(*make_plan(220.0f)), destroyed1);
+        saudade::audio::AudioEngine engine(std::move(p1));
 
-        auto p2 = make_plan(440.0f);
-        weak_gen2 = p2;
-        engine.publish_plan(p2);
+        auto p2 = std::make_unique<TrackedPlan>(std::move(*make_plan(440.0f)), destroyed2);
+        engine.publish_plan(std::move(p2));
 
-        auto p3 = make_plan(880.0f);
-        weak_gen3 = p3;
-        engine.publish_plan(p3);
+        auto p3 = std::make_unique<TrackedPlan>(std::move(*make_plan(880.0f)), destroyed3);
+        engine.publish_plan(std::move(p3));
 
-        // Before engine destruction, weak pointers should be alive
-        assert(!weak_gen1.expired());
-        assert(!weak_gen2.expired());
-        assert(!weak_gen3.expired());
+        // Before engine destruction, all objects should still be alive
+        assert(destroyed1.load() == 0);
+        assert(destroyed2.load() == 0);
+        assert(destroyed3.load() == 0);
     }
 
     // After engine destruction, all plans must be destroyed
-    assert(weak_gen1.expired());
-    assert(weak_gen2.expired());
-    assert(weak_gen3.expired());
+    assert(destroyed1.load() == 1);
+    assert(destroyed2.load() == 1);
+    assert(destroyed3.load() == 1);
 
     std::cout << "  [PASS] Shutdown: Active and retired plans destroyed without memory leak\n";
 }

@@ -14,7 +14,7 @@ float db_to_linear(float gain_db) noexcept {
 
 } // namespace
 
-std::shared_ptr<renderplan::RenderPlan> GraphCompiler::compile(const GraphModel& graph) {
+std::unique_ptr<renderplan::RenderPlan> GraphCompiler::compile(const GraphModel& graph) {
     const auto& nodes = graph.nodes();
     const auto& connections = graph.connections();
 
@@ -196,7 +196,7 @@ std::shared_ptr<renderplan::RenderPlan> GraphCompiler::compile(const GraphModel&
         }, record.data);
     }
 
-    return std::make_shared<renderplan::RenderPlan>(
+    return std::make_unique<renderplan::RenderPlan>(
         std::move(steps),
         next_scratch_slot,
         next_sine_state,

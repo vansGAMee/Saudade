@@ -10,10 +10,11 @@
 #include <atomic>
 #include <vector>
 #include <chrono>
+#include <memory>
 
 namespace {
 
-std::shared_ptr<saudade::renderplan::RenderPlan> make_plan(float freq) {
+std::unique_ptr<saudade::renderplan::RenderPlan> make_plan(float freq) {
     saudade::graph::GraphModel graph;
     const auto sine = graph.add_sine_node(freq);
     const auto gain = graph.add_gain_node(-12.0f);
@@ -34,15 +35,7 @@ std::shared_ptr<saudade::renderplan::RenderPlan> make_plan(float freq) {
 void test_high_concurrency_stress() {
     std::cout << "[RUN] test_high_concurrency_stress\n";
 
-    // Precompile plans to isolate publication/reclamation performance from compilation
-    constexpr size_t kNumDistinctPlans = 8;
-    std::vector<std::shared_ptr<saudade::renderplan::RenderPlan>> plans;
-    plans.reserve(kNumDistinctPlans);
-    for (size_t i = 0; i < kNumDistinctPlans; ++i) {
-        plans.push_back(make_plan(220.0f + static_cast<float>(i) * 110.0f));
-    }
-
-    saudade::audio::AudioEngine engine(plans[0]);
+    saudade::audio::AudioEngine engine(make_plan(220.0f));
 
     constexpr uint32_t quantum = 128;
     saudade::audio::AudioBuffer buffer(2, quantum);
@@ -72,7 +65,7 @@ void test_high_concurrency_stress() {
     // 2. Control thread publishing rapidly
     saudade::audio::PlanGeneration last_published = 1;
     for (int i = 1; i <= kTotalPublications; ++i) {
-        last_published = engine.publish_plan(plans[static_cast<size_t>(i) % kNumDistinctPlans]);
+        last_published = engine.publish_plan(make_plan(220.0f + static_cast<float>(i % 8) * 110.0f));
 
         // Periodically reclaim retired plans
         if (i % 10 == 0) {
