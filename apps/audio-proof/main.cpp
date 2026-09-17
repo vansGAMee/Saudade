@@ -6,6 +6,8 @@
 #include <saudade/time/time_types.hpp>
 #include <saudade/time/transport.hpp>
 #include <saudade/events/event_types.hpp>
+#include <saudade/model/pattern.hpp>
+#include <saudade/model/pattern_compiler.hpp>
 
 #include <iostream>
 #include <iomanip>
@@ -67,51 +69,80 @@ int main() {
 
         const double sr = endpoint.sample_rate() > 0 ? endpoint.sample_rate() : 48000.0;
 
-        // 5. Schedule melody at 120 BPM via TempoMap
-        auto to_sample = [&](double beat) -> saudade::time::SamplePosition {
-            const int64_t ticks = static_cast<int64_t>(std::llround(beat * static_cast<double>(saudade::time::BeatPosition::kTicksPerBeat)));
-            return engine.transport().tempo_map().beat_to_sample(saudade::time::BeatPosition::from_ticks(ticks), sr);
-        };
+        // 5. Build canonical musical Pattern (Milestone 5)
+        saudade::model::Pattern pattern(1, "DemoMelody", saudade::time::BeatDuration::from_beats(4));
+        const auto lane_id = pattern.add_lane("SynthLead");
+        auto* lane = pattern.find_lane(lane_id);
+        if (!lane) {
+            throw std::runtime_error("Failed to create pattern lane");
+        }
+
+        auto& seq = lane->notes();
 
         // Note 1: C4 (pitch 60.0) [Beat 0.0 -> 0.8]
-        engine.schedule_note_on(to_sample(0.0), /*id=*/1, /*pitch=*/60.0, /*vel=*/0.8f);
-        engine.schedule_note_off(to_sample(0.8), /*id=*/1);
+        seq.add_note(saudade::time::BeatPosition::zero(),
+                     saudade::time::BeatDuration::from_fraction(8, 10),
+                     60.0, 0.8f);
 
         // Note 2: E4 (pitch 64.0) [Beat 1.0 -> 1.8]
-        engine.schedule_note_on(to_sample(1.0), /*id=*/2, /*pitch=*/64.0, /*vel=*/0.8f);
-        engine.schedule_note_off(to_sample(1.8), /*id=*/2);
+        seq.add_note(saudade::time::BeatPosition::from_beats(1),
+                     saudade::time::BeatDuration::from_fraction(8, 10),
+                     64.0, 0.8f);
 
         // Note 3: G4 (pitch 67.0) [Beat 2.0 -> 2.8]
-        engine.schedule_note_on(to_sample(2.0), /*id=*/3, /*pitch=*/67.0, /*vel=*/0.8f);
-        engine.schedule_note_off(to_sample(2.8), /*id=*/3);
+        seq.add_note(saudade::time::BeatPosition::from_beats(2),
+                     saudade::time::BeatDuration::from_fraction(8, 10),
+                     67.0, 0.8f);
 
         // Chord: C4 + E4 + G4 simultaneous [Beat 3.0 -> 3.8]
-        engine.schedule_note_on(to_sample(3.0), /*id=*/4, /*pitch=*/60.0, /*vel=*/0.7f);
-        engine.schedule_note_on(to_sample(3.0), /*id=*/5, /*pitch=*/64.0, /*vel=*/0.7f);
-        engine.schedule_note_on(to_sample(3.0), /*id=*/6, /*pitch=*/67.0, /*vel=*/0.7f);
-        engine.schedule_note_off(to_sample(3.8), /*id=*/4);
-        engine.schedule_note_off(to_sample(3.8), /*id=*/5);
-        engine.schedule_note_off(to_sample(3.8), /*id=*/6);
+        seq.add_note(saudade::time::BeatPosition::from_beats(3),
+                     saudade::time::BeatDuration::from_fraction(8, 10),
+                     60.0, 0.7f);
+        seq.add_note(saudade::time::BeatPosition::from_beats(3),
+                     saudade::time::BeatDuration::from_fraction(8, 10),
+                     64.0, 0.7f);
+        seq.add_note(saudade::time::BeatPosition::from_beats(3),
+                     saudade::time::BeatDuration::from_fraction(8, 10),
+                     67.0, 0.7f);
+
+        // Compile Pattern control-side into sample-accurate TimelineEvents
+        const auto compiled_events = saudade::model::PatternCompiler::compile(
+            pattern,
+            engine.transport().tempo_map(),
+            sr
+        );
+
+        // Ingress compiled TimelineEvents into AudioEngine queue
+        for (const auto& ev : compiled_events) {
+            engine.schedule_event(ev);
+        }
 
         // 6. Print banner and scheduled melody details
         std::cout << "==================================================\n"
-                  << "Saudade Audio Proof -- Milestone 4: PolySynth & Events\n"
+                  << "Saudade Audio Proof -- Milestone 5: Canonical Pattern & Sequence Model\n"
                   << "==================================================\n"
                   << "Backend: PipeWire\n"
                   << "Graph: PolySynth(8 voices) -> Gain(-12 dB) -> Stereo Output\n"
                   << "Sample rate: " << endpoint.sample_rate() << " Hz\n"
                   << "Quantum: " << endpoint.quantum() << " frames\n"
-                  << "Tempo: 120.0 BPM (1 beat = 0.5s = " << to_sample(1.0) << " samples)\n"
-                  << "Scheduled Melody (Control-side log):\n"
-                  << "  Beat 0.00 (sample " << std::setw(6) << to_sample(0.0) << "): NoteOn  C4 (pitch 60.0) [ID 1]\n"
-                  << "  Beat 0.80 (sample " << std::setw(6) << to_sample(0.8) << "): NoteOff C4 [ID 1]\n"
-                  << "  Beat 1.00 (sample " << std::setw(6) << to_sample(1.0) << "): NoteOn  E4 (pitch 64.0) [ID 2]\n"
-                  << "  Beat 1.80 (sample " << std::setw(6) << to_sample(1.8) << "): NoteOff E4 [ID 2]\n"
-                  << "  Beat 2.00 (sample " << std::setw(6) << to_sample(2.0) << "): NoteOn  G4 (pitch 67.0) [ID 3]\n"
-                  << "  Beat 2.80 (sample " << std::setw(6) << to_sample(2.8) << "): NoteOff G4 [ID 3]\n"
-                  << "  Beat 3.00 (sample " << std::setw(6) << to_sample(3.0) << "): NoteOn  C4+E4+G4 triad chord [IDs 4, 5, 6]\n"
-                  << "  Beat 3.80 (sample " << std::setw(6) << to_sample(3.8) << "): NoteOff C4+E4+G4 chord [IDs 4, 5, 6]\n"
-                  << "==================================================\n"
+                  << "Tempo: 120.0 BPM\n"
+                  << "Pattern: '" << pattern.name() << "' (" << pattern.length().to_double()
+                  << " beats, " << pattern.num_lanes() << " lane, "
+                  << seq.size() << " notes -> " << compiled_events.size() << " TimelineEvents)\n"
+                  << "Compiled Events (Control-side log):\n";
+
+        for (const auto& ev : compiled_events) {
+            std::cout << "  Sample " << std::setw(7) << ev.sample_position << ": ";
+            if (std::holds_alternative<saudade::events::NoteOn>(ev.payload)) {
+                const auto& on = std::get<saudade::events::NoteOn>(ev.payload);
+                std::cout << "NoteOn  [ID " << on.note_id << "] Pitch: " << on.pitch << " Vel: " << on.velocity << "\n";
+            } else {
+                const auto& off = std::get<saudade::events::NoteOff>(ev.payload);
+                std::cout << "NoteOff [ID " << off.note_id << "] RelVel: " << off.release_velocity << "\n";
+            }
+        }
+
+        std::cout << "==================================================\n"
                   << "Starting transport playback...\n"
                   << std::flush;
 

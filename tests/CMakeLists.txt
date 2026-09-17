@@ -122,4 +122,29 @@ target_link_libraries(test_poly_synth
 saudade_set_warnings(test_poly_synth)
 add_test(NAME poly_synth COMMAND test_poly_synth)
 
+add_executable(test_model
+    test_model.cpp
+)
+target_link_libraries(test_model
+    PRIVATE
+        saudade_model
+        saudade_time
+        saudade_events
+)
+saudade_set_warnings(test_model)
+add_test(NAME model COMMAND test_model)
+
+add_executable(test_pattern_compiler
+    test_pattern_compiler.cpp
+)
+target_link_libraries(test_pattern_compiler
+    PRIVATE
+        saudade_model
+        saudade_time
+        saudade_events
+)
+saudade_set_warnings(test_pattern_compiler)
+add_test(NAME pattern_compiler COMMAND test_pattern_compiler)
+
+
 

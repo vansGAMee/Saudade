@@ -88,4 +88,27 @@ inline bool operator<(const TimedEvent& lhs, const TimedEvent& rhs) noexcept {
     return get_id(lhs.payload) < get_id(rhs.payload);
 }
 
+/// Deterministic ordering for TimelineEvents:
+/// 1. Ascending by sample_position
+/// 2. NoteOff before NoteOn on identical sample_position
+/// 3. Ascending by NoteId
+inline bool operator<(const TimelineEvent& lhs, const TimelineEvent& rhs) noexcept {
+    if (lhs.sample_position != rhs.sample_position) {
+        return lhs.sample_position < rhs.sample_position;
+    }
+    const auto get_rank = [](const EventPayload& p) noexcept -> int {
+        return std::holds_alternative<NoteOff>(p) ? 0 : 1;
+    };
+    const int rank_l = get_rank(lhs.payload);
+    const int rank_r = get_rank(rhs.payload);
+    if (rank_l != rank_r) {
+        return rank_l < rank_r;
+    }
+    const auto get_id = [](const EventPayload& p) noexcept -> NoteId {
+        if (std::holds_alternative<NoteOff>(p)) return std::get<NoteOff>(p).note_id;
+        return std::get<NoteOn>(p).note_id;
+    };
+    return get_id(lhs.payload) < get_id(rhs.payload);
+}
+
 } // namespace saudade::events
