@@ -1,10 +1,10 @@
 #pragma once
 
-#include <saudade/ui/editor_controller.hpp>
-#include <saudade/ui/coordinates.hpp>
-
 #include <QQuickItem>
 #include <QColor>
+
+#include <saudade/ui/editor_controller.hpp>
+#include <saudade/ui/coordinates.hpp>
 
 namespace saudade::ui {
 

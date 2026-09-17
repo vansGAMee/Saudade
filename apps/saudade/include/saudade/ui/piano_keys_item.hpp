@@ -1,8 +1,8 @@
 #pragma once
 
-#include <saudade/ui/coordinates.hpp>
-
 #include <QQuickItem>
+
+#include <saudade/ui/coordinates.hpp>
 
 namespace saudade::ui {
 

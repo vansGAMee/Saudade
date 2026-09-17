@@ -1,15 +1,20 @@
 #pragma once
 
+#include <QObject>
+#include <QTimer>
+
+#include <cstdint>
+#include <memory>
+
+#ifndef Q_MOC_RUN
 #include <saudade/model/pattern.hpp>
 #include <saudade/model/pattern_compiler.hpp>
 #include <saudade/audio/engine.hpp>
 #include <saudade/time/time_types.hpp>
-
-#include <QObject>
-#include <QTimer>
-
-#include <memory>
-#include <cstdint>
+#else
+namespace saudade::audio { class AudioEngine; }
+namespace saudade::model { class Pattern; class NoteSequence; struct Note; using LaneId = uint64_t; }
+#endif
 
 namespace saudade::ui {
 
