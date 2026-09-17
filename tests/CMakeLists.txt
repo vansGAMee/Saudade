@@ -146,5 +146,27 @@ target_link_libraries(test_pattern_compiler
 saudade_set_warnings(test_pattern_compiler)
 add_test(NAME pattern_compiler COMMAND test_pattern_compiler)
 
+if(SAUDADE_BUILD_GUI)
+    add_executable(test_ui_editor
+        test_ui_editor.cpp
+    )
+    target_link_libraries(test_ui_editor
+        PRIVATE
+            saudade_ui
+            saudade_graph
+            saudade_audio
+            saudade_time
+            saudade_events
+            saudade_model
+            Qt6::Core
+            Qt6::Gui
+            Qt6::Quick
+            Qt6::Qml
+    )
+    saudade_set_warnings(test_ui_editor)
+    add_test(NAME ui_editor COMMAND test_ui_editor)
+endif()
+
+
 
 

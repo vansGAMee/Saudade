@@ -71,6 +71,16 @@ add_subdirectory(adapters/pipewire)
 # Applications
 add_subdirectory(apps/audio-proof)
 
+# GUI Application (Qt6 dependency isolated to GUI targets)
+option(SAUDADE_BUILD_GUI "Build Saudade Qt6 GUI application" ON)
+if(SAUDADE_BUILD_GUI)
+    find_package(Qt6 COMPONENTS Core Gui Quick Qml QUIET)
+    if(NOT Qt6_FOUND)
+        message(FATAL_ERROR "Qt6 (components Core, Gui, Quick, Qml) is required to build the Saudade GUI application. Please install Qt6 development packages (e.g. qt6-base-dev, qt6-declarative-dev).")
+    endif()
+    add_subdirectory(apps/saudade)
+endif()
+
 # Tests
 if(SAUDADE_BUILD_TESTS)
     enable_testing()

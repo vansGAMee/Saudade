@@ -11,6 +11,8 @@
 
 #include <memory>
 #include <cstdint>
+#include <atomic>
+#include <chrono>
 
 namespace saudade::audio {
 
@@ -90,12 +92,32 @@ public:
 
     [[nodiscard]] uint32_t max_block_size() const noexcept { return max_block_size_; }
 
+    /// Requests an asynchronous RT-safe event flush.
+    /// Realtime thread will drain the event queue and reset active synth DSP voices
+    /// at the start of the next audio quantum without taking any locks or reallocating memory.
+    uint64_t request_event_flush() noexcept;
+
+    /// Checks if a flush generation has been acknowledged by the realtime thread.
+    [[nodiscard]] bool is_flush_acknowledged(uint64_t generation) const noexcept;
+
+    /// Blocks (yielding CPU) on the control thread until the realtime thread acknowledges the flush.
+    bool wait_for_flush(uint64_t generation,
+                        std::chrono::milliseconds timeout = std::chrono::milliseconds(500)) noexcept;
+
+    /// Synchronous helper for control thread: requests flush and waits for acknowledgment.
+    /// Resets control-side schedule tracking to 0 after acknowledgment.
+    bool flush_events(std::chrono::milliseconds timeout = std::chrono::milliseconds(500)) noexcept;
+
 private:
     uint32_t max_block_size_{kDefaultMaxBlockSize};
     PlanPublisher publisher_;
     time::TransportController transport_;
     events::EventQueue event_queue_;
     events::EventBlock quantum_event_block_;
+
+    alignas(64) std::atomic<uint64_t> flush_requested_{0};
+    alignas(64) std::atomic<uint64_t> flush_acknowledged_{0};
+    uint64_t next_flush_request_{0};
 };
 
 } // namespace saudade::audio
