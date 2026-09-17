@@ -1,0 +1,61 @@
+#pragma once
+
+#include <saudade/audio/audio_block.hpp>
+#include <saudade/audio/audio_buffer.hpp>
+#include <saudade/audio/process_context.hpp>
+#include <saudade/audio/plan_publisher.hpp>
+#include <saudade/renderplan/render_plan.hpp>
+
+#include <memory>
+#include <cstdint>
+
+namespace saudade::audio {
+
+/// Audio engine executing precompiled, immutable RenderPlans.
+/// Supports live atomic replacement of the active plan at quantum boundaries
+/// with zero allocations and zero locks on the realtime path.
+class AudioEngine {
+public:
+    static constexpr uint32_t kDefaultMaxBlockSize = 8192;
+
+    explicit AudioEngine(std::shared_ptr<const renderplan::RenderPlan> initial_plan,
+                         uint32_t max_block_size = kDefaultMaxBlockSize);
+
+    ~AudioEngine() = default;
+
+    AudioEngine(const AudioEngine&) = delete;
+    AudioEngine& operator=(const AudioEngine&) = delete;
+    AudioEngine(AudioEngine&&) = delete;
+    AudioEngine& operator=(AudioEngine&&) = delete;
+
+    /// Prepares buffers for a maximum block size outside the realtime path.
+    void prepare(uint32_t max_block_size);
+
+    /// Resets runtime DSP state (e.g. oscillator phase). Outside realtime path.
+    void reset();
+
+    /// Realtime render path. Hard realtime safe: zero allocations, zero locks.
+    /// Snapshots active plan once at quantum start and acknowledges generation on completion.
+    void process(AudioBlock& output_block, const ProcessContext& ctx) noexcept;
+
+    /// Publishes a new RenderPlan generation from the control thread.
+    PlanGeneration publish_plan(std::shared_ptr<const renderplan::RenderPlan> new_plan);
+
+    /// Collects and destroys retired plans outside the realtime path.
+    size_t collect_retired();
+
+    /// Returns the currently active RenderPlan.
+    [[nodiscard]] const renderplan::RenderPlan& plan() const { return publisher_.active_plan(); }
+
+    /// Accesses the underlying PlanPublisher.
+    [[nodiscard]] PlanPublisher& publisher() noexcept { return publisher_; }
+    [[nodiscard]] const PlanPublisher& publisher() const noexcept { return publisher_; }
+
+    [[nodiscard]] uint32_t max_block_size() const noexcept { return max_block_size_; }
+
+private:
+    uint32_t max_block_size_{kDefaultMaxBlockSize};
+    PlanPublisher publisher_;
+};
+
+} // namespace saudade::audio
