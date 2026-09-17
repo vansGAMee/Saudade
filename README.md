@@ -1,15 +1,33 @@
-# Saudade - Professional Linux DAW in C++23
+# Saudade
 
-Saudade is a Linux-first digital audio workstation (DAW) designed for professional, long-term development in C++23.
+Saudade is a Linux-first open-source professional Digital Audio Workstation (DAW) written in C++23.
+
+> **Status**: Pre-alpha / active development. The project is establishing its architectural foundation and core realtime execution layer.
 
 ---
 
-## Architectural Pipeline
+## Current Capabilities
+
+- **Native Audio Backend**: Direct PipeWire integration via `pw_filter` for pro-audio hardware output.
+- **Immutable RenderPlan**: Lock-free, allocation-free execution steps compiled from audio graph topologies.
+- **Realtime-Safe Plan Swapping**: Generation-acknowledged double-buffered plan publication with safe deferred resource reclamation.
+- **Time Core & Transport**: Sample-accurate position tracking (`SamplePosition`), fixed-point beat timing (`BeatPosition`, `BeatDuration`), tempo mapping, and musical transport state.
+- **Sample-Accurate Events**: Deterministic `TimelineEvent` ingress and dispatch (`NoteOn`, `NoteOff`) without allocations during quantum processing.
+- **Musical Model**: Canonical `Pattern`, `PatternLane`, and `NoteSequence` hierarchy compiled deterministically into sample-accurate event streams.
+- **Polyphonic Synthesizer**: 8-voice proof polyphonic synthesizer with band-limited oscillators, ADSR envelopes, and oldest-voice stealing.
+- **Qt 6 / Qt Quick GUI**: Desktop frontend with custom Scene Graph rendering (`QSGGeometryNode`).
+- **Interactive Piano Roll**: Note creation, dragging to move (time & pitch), edge-dragging to resize duration, right-click deletion, and playback preview.
+- **Multi-Toolchain & Multi-Sanitizer Verification**: Continuous testing under GCC, Clang, AddressSanitizer, UndefinedBehaviorSanitizer, and ThreadSanitizer.
+
+---
+
+## Architecture
+
+Saudade strictly isolates non-realtime management (control thread) from deterministic DSP rendering (audio thread):
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    CONTROL SIDE (UI / Model)                │
-│                                                             │
 │   Pattern                                                   │
 │     └─ PatternLane                                          │
 │          └─ NoteSequence                                    │
@@ -19,14 +37,11 @@ Saudade is a Linux-first digital audio workstation (DAW) designed for profession
                                ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    PatternCompiler                          │
-│                                                             │
-│   TempoMap::beat_to_sample(beat, sample_rate)               │
-│   Deterministic sorting:                                    │
+│   Deterministic event ordering:                             │
 │     1. sample_position ASC                                  │
 │     2. NoteOff BEFORE NoteOn at identical sample            │
 │     3. NoteId ASC                                           │
 └──────────────────────────────┬──────────────────────────────┘
-                               │
                                │ std::vector<TimelineEvent>
                                ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -49,9 +64,9 @@ Saudade is a Linux-first digital audio workstation (DAW) designed for profession
                                ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                       RenderPlan                            │
-│   - PolySynthStep (8 voices, oldest-voice stealing)         │
-│   - GainStep (-12 dB)                                       │
-│   - OutputStep (Stereo)                                     │
+│   - PolySynthStep (8 voices, dynamic voice stealing)        │
+│   - GainStep (-12 dB master proof attenuation)              │
+│   - OutputStep (Interleaved stereo mapping)                 │
 └──────────────────────────────┬──────────────────────────────┘
                                │
                                ▼
@@ -61,48 +76,41 @@ Saudade is a Linux-first digital audio workstation (DAW) designed for profession
 └─────────────────────────────────────────────────────────────┘
 ```
 
+For complete structural diagrams and lifetime rules, see [`docs/architecture.md`](docs/architecture.md).
+
 ---
 
-## Architectural Principles & Invariants
+## Realtime Guarantees
 
-1. **Isolation of Audio Core**:
-   - `libs/time`, `libs/events`, `libs/model`, `libs/renderplan`, `libs/graph`, and `libs/audio` have zero dependencies on Qt, PipeWire, ALSA, or JACK.
-   - Qt is strictly confined to the UI layer (`apps/saudade`).
-   - PipeWire is strictly confined to `adapters/pipewire`.
+Code executing in the realtime render path adheres to strict, automated invariants:
+- **Zero Dynamic Memory Allocations**: No calls to `malloc`, `free`, `new`, `delete`, or resizing containers (monitored by `ScopedRealtimeGuard`).
+- **Zero Blocking Synchronization**: No `std::mutex`, `std::condition_variable`, or unbounded spinlocks.
+- **Zero File/Network I/O**: No reading, writing, or filesystem interaction.
+- **Zero Logging**: No unbuffered console or file output.
+- **Zero Qt / Framework Interactions**: The audio thread remains completely decoupled from GUI libraries.
+- **Deferred Destruction**: Resource disposal occurs exclusively on the control thread via `AudioEngine::collect_retired()`.
 
-2. **Hard Realtime Safety**:
-   The realtime render callback strictly guarantees:
-   - Zero dynamic allocations (`new`, `delete`, `malloc`, `free`, vector reallocations).
-   - Zero blocking locks (`mutex`, `condition_variable`, lock contention).
-   - Zero I/O operations (file system, console output, `printf`, `iostream`).
-   - Monitored by a thread-local `ScopedRealtimeGuard`.
-
-3. **RT-Safe Event Flush Handshake**:
-   - Seamless repeated playback cycles (`Draw -> Play -> Stop -> Edit -> Play`).
-   - SPSC queue flushed exclusively by the realtime consumer thread at quantum boundaries via atomic generation handshake without mutexes or sleeping.
-
-4. **Scene Graph Piano Roll**:
-   - Custom `QQuickItem` with native Qt Quick Scene Graph (`QSGGeometryNode`).
-   - Direct batch rendering with zero QML delegate overhead.
+See [`docs/realtime-contract.md`](docs/realtime-contract.md) for the full contract.
 
 ---
 
 ## Dependencies
 
-- **Compiler**: Clang (>= 18) or GCC (>= 13) supporting C++23
-- **Build System**: CMake (>= 3.25) and Ninja
+- **Compiler**: GCC >= 13 or Clang >= 18 with C++23 support
+- **Build System**: CMake >= 3.25 and Ninja
 - **Audio**: `libpipewire-0.3` and `pkg-config`
-- **GUI**: Qt 6 (Core, Gui, Quick, Qml)
+- **GUI**: Qt 6 (`Core`, `Gui`, `Quick`, `Qml`, `Test`)
 
 ### Package Installation
 
 ```bash
+# Ubuntu 24.04+ / Debian 13+
+sudo apt update && sudo apt install -y \
+    build-essential cmake ninja-build pkg-config clang gcc g++ \
+    libpipewire-0.3-dev libspa-0.2-dev qt6-base-dev qt6-declarative-dev libgl1-mesa-dev
+
 # Arch Linux
 sudo pacman -S base-devel cmake ninja pipewire clang gcc pkgconf qt6-base qt6-declarative
-
-# Ubuntu 24.04+ / Debian 13+
-sudo apt install build-essential cmake ninja-build libpipewire-0.3-dev pkg-config clang \
-    qt6-base-dev qt6-declarative-dev libgl1-mesa-dev
 
 # Fedora 40+
 sudo dnf install gcc-c++ clang cmake ninja-build pipewire-devel pkgconf-pkg-config \
@@ -111,63 +119,94 @@ sudo dnf install gcc-c++ clang cmake ninja-build pipewire-devel pkgconf-pkg-conf
 
 ---
 
-## Build Commands
+## Build
 
-### Standard Build (GCC Debug)
 ```bash
+# Standard GCC Debug build
 cmake -B build -G Ninja
 cmake --build build
-```
 
-### AddressSanitizer + UndefinedBehaviorSanitizer
-```bash
+# Clang build
+cmake -B build-clang -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+cmake --build build-clang
+
+# AddressSanitizer + UndefinedBehaviorSanitizer
 cmake -B build-asan -G Ninja -DSAUDADE_ENABLE_SANITIZERS=ON
 cmake --build build-asan
-```
 
-### ThreadSanitizer
-```bash
+# ThreadSanitizer
 cmake -B build-tsan -G Ninja -DSAUDADE_ENABLE_TSAN=ON
 cmake --build build-tsan
 ```
 
-### Clang Build
-```bash
-cmake -B build-clang -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-cmake --build build-clang
-```
-
 ---
 
-## Running Tests
+## Test
 
-Run the complete deterministic test suite (14 test suites):
+Run all 14 deterministic test suites:
 ```bash
 ctest --test-dir build --output-on-failure
 ```
 
+Under sanitizers:
+```bash
+ctest --test-dir build-asan --output-on-failure
+ctest --test-dir build-tsan --output-on-failure
+ctest --test-dir build-clang --output-on-failure
+```
+
 ---
 
-## Running the GUI Application
+## Run
 
-Launch the native Saudade composer application:
+### GUI Application
+Launch the Saudade composer application:
 ```bash
 ./build/apps/saudade/saudade
 ```
 
-### Composer Workflow:
-1. **Draw Notes**: Left-click and drag on the Piano Roll grid to create notes quantized to 1/4 beats.
-2. **Move Notes**: Left-click and drag the body of any note to shift its musical start time or semitone pitch.
-3. **Resize Notes**: Left-click and drag the right edge of any note to alter its duration.
-4. **Delete Notes**: Right-click on any note to remove it.
-5. **Play**: Click **[PLAY]** on the top bar to hear your melody rendered through the 8-voice polyphonic synthesizer via PipeWire.
-6. **Stop & Re-edit**: Click **[STOP]**, edit or add notes, and press **[PLAY]** again.
+- **Draw**: Left-click on empty grid cells to create notes (quantized to 1/4 beats).
+- **Move**: Drag a note's body to shift its beat position and pitch.
+- **Resize**: Drag a note's right edge to change duration.
+- **Delete**: Right-click on a note to delete it.
+- **Play / Stop**: Toggle playback to hear the sequence synthesized in real time via PipeWire.
 
----
-
-## Running the Headless Audio Proof
-
+### Headless Audio Proof
 To run the automated headless audio proof executable:
 ```bash
 ./build/apps/audio-proof/audio-proof
 ```
+
+---
+
+## Repository Layout
+
+```text
+Saudade/
+├── adapters/
+│   └── pipewire/          # Native PipeWire audio endpoint adapter
+├── apps/
+│   ├── audio-proof/       # Headless CLI audio verification proof
+│   └── saudade/           # Qt 6 / Qt Quick GUI composer application
+├── docs/                  # Architecture and realtime contract documentation
+├── libs/
+│   ├── audio/             # AudioEngine, PlanPublisher, and buffer management
+│   ├── events/            # TimelineEvent model and SPSC lock-free event queues
+│   ├── graph/             # Mutable audio graph model and topological compiler
+│   ├── model/             # Musical domain (Pattern, NoteSequence, Note)
+│   ├── renderplan/        # Immutable DSP execution steps and state pools
+│   └── time/              # SamplePosition, BeatPosition, TempoMap, Transport
+└── tests/                 # Deterministic unit, integration, and sanitizer tests
+```
+
+---
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for coding standards, architectural guidelines, commit conventions, and pull request workflows.
+
+---
+
+## License
+
+Saudade is released under the **GNU General Public License v3.0 or later** ([GPL-3.0-or-later](LICENSE)).

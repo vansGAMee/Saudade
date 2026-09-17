@@ -1,7 +1,64 @@
+# Build directories
 build/
 build-*/
-.cache/
+cmake-build-*/
+bin/
+out/
+
+# CMake artifacts
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
 compile_commands.json
+CTestTestfile.cmake
+Testing/
+Makefile
+
+# Compiled objects and libraries
 *.o
+*.obj
 *.a
+*.lib
 *.so
+*.so.*
+*.dylib
+*.dll
+
+# Qt generated files
+moc_*.cpp
+qrc_*.cpp
+*.moc
+ui_*.h
+*.qmlc
+*.jsc
+.rcc/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+*.user
+*.user.*
+
+# Antigravity / AI assistant / Scratch files
+.gemini/
+scratch/
+*.log
+
+# Sanitizer and crash dumps
+core
+core.*
+vgcore.*
+asan.log*
+tsan.log*
+ubsan.log*
+
+# Secrets, keys, and tokens
+*.key
+*.pem
+*.token
+.env
+.env.*
