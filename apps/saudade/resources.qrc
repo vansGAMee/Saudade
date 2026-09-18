@@ -1,5 +1,21 @@
 <RCC>
     <qresource prefix="/saudade">
         <file>Main.qml</file>
+        <file>qml/theme/SaudadeTheme.qml</file>
+        <file>qml/theme/qmldir</file>
+        <file>qml/components/SaudadeButton.qml</file>
+        <file>qml/components/SaudadeIconButton.qml</file>
+        <file>qml/components/SaudadeKnob.qml</file>
+        <file>qml/components/SaudadeSlider.qml</file>
+        <file>qml/components/SaudadeMeter.qml</file>
+        <file>qml/layout/TopTransportBar.qml</file>
+        <file>qml/layout/SubContextBar.qml</file>
+        <file>qml/layout/ToolRibbon.qml</file>
+        <file>qml/layout/LeftBrowserDrawer.qml</file>
+        <file>qml/layout/BottomDeviceRack.qml</file>
+        <file>qml/layout/VelocityLane.qml</file>
+        <file>qml/layout/ArrangementView.qml</file>
+        <file>qml/layout/MixerConsoleView.qml</file>
+        <file>qml/layout/FooterStatusBar.qml</file>
     </qresource>
 </RCC>

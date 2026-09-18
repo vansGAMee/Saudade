@@ -1,3 +1,4 @@
+#include <iostream>
 #include <saudade/ui/piano_roll_item.hpp>
 
 #include <QSGGeometryNode>
@@ -198,46 +199,78 @@ QSGNode* PianoRollItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData* /
         root = new QSGNode();
     }
 
-    QSGGeometryNode* bgNode = nullptr;
-    QSGGeometryNode* gridNode = nullptr;
-    QSGGeometryNode* notesNode = nullptr;
+    QSGGeometryNode* bgBlackNode = nullptr;
+    QSGGeometryNode* bgWhiteNode = nullptr;
+    QSGGeometryNode* gridSubdivNode = nullptr;
+    QSGGeometryNode* gridBeatNode = nullptr;
+    QSGGeometryNode* gridBarNode = nullptr;
+    QSGGeometryNode* gridPitchNode = nullptr;
+    QSGGeometryNode* gridOctaveNode = nullptr;
+    QSGGeometryNode* notesBodyNode = nullptr;
+    QSGGeometryNode* notesHandleNode = nullptr;
     QSGGeometryNode* playheadNode = nullptr;
 
+    auto createFlatNode = [](const QColor& color) {
+        auto* node = new QSGGeometryNode();
+        auto* mat = new QSGFlatColorMaterial();
+        mat->setColor(color);
+        node->setMaterial(mat);
+        node->setFlag(QSGNode::OwnsMaterial);
+        node->setFlag(QSGNode::OwnsGeometry);
+        return node;
+    };
+
     if (root->childCount() == 0) {
-        // Child 0: Background
-        bgNode = new QSGGeometryNode();
-        bgNode->setMaterial(new QSGVertexColorMaterial());
-        bgNode->setFlag(QSGNode::OwnsMaterial);
-        bgNode->setFlag(QSGNode::OwnsGeometry);
-        root->appendChildNode(bgNode);
+        // 0: bgBlack (#121318)
+        bgBlackNode = createFlatNode(QColor(18, 19, 24));
+        root->appendChildNode(bgBlackNode);
 
-        // Child 1: Grid
-        gridNode = new QSGGeometryNode();
-        gridNode->setMaterial(new QSGVertexColorMaterial());
-        gridNode->setFlag(QSGNode::OwnsMaterial);
-        gridNode->setFlag(QSGNode::OwnsGeometry);
-        root->appendChildNode(gridNode);
+        // 1: bgWhite (#17191F)
+        bgWhiteNode = createFlatNode(QColor(23, 25, 31));
+        root->appendChildNode(bgWhiteNode);
 
-        // Child 2: Notes
-        notesNode = new QSGGeometryNode();
-        notesNode->setMaterial(new QSGVertexColorMaterial());
-        notesNode->setFlag(QSGNode::OwnsMaterial);
-        notesNode->setFlag(QSGNode::OwnsGeometry);
-        root->appendChildNode(notesNode);
+        // 2: gridSubdiv (#202229)
+        gridSubdivNode = createFlatNode(QColor(32, 34, 41));
+        root->appendChildNode(gridSubdivNode);
 
-        // Child 3: Playhead
-        playheadNode = new QSGGeometryNode();
-        auto* playheadMat = new QSGFlatColorMaterial();
-        playheadMat->setColor(QColor(249, 115, 22)); // Orange
-        playheadNode->setMaterial(playheadMat);
-        playheadNode->setFlag(QSGNode::OwnsMaterial);
-        playheadNode->setFlag(QSGNode::OwnsGeometry);
+        // 3: gridBeat (#353944)
+        gridBeatNode = createFlatNode(QColor(53, 57, 68));
+        root->appendChildNode(gridBeatNode);
+
+        // 4: gridBar (#4C5059)
+        gridBarNode = createFlatNode(QColor(76, 80, 89));
+        root->appendChildNode(gridBarNode);
+
+        // 5: gridPitch (#24262E)
+        gridPitchNode = createFlatNode(QColor(36, 38, 46));
+        root->appendChildNode(gridPitchNode);
+
+        // 6: gridOctave (#353944)
+        gridOctaveNode = createFlatNode(QColor(53, 57, 68));
+        root->appendChildNode(gridOctaveNode);
+
+        // 7: notesBody (#8FA5BA)
+        notesBodyNode = createFlatNode(QColor(143, 165, 186));
+        root->appendChildNode(notesBodyNode);
+
+        // 8: notesHandle (#B3C9DF)
+        notesHandleNode = createFlatNode(QColor(179, 201, 223));
+        root->appendChildNode(notesHandleNode);
+
+        // 9: playhead (#D6B49A)
+        playheadNode = createFlatNode(QColor(214, 180, 154));
         root->appendChildNode(playheadNode);
     } else {
-        bgNode = static_cast<QSGGeometryNode*>(root->childAtIndex(0));
-        gridNode = static_cast<QSGGeometryNode*>(root->childAtIndex(1));
-        notesNode = static_cast<QSGGeometryNode*>(root->childAtIndex(2));
-        playheadNode = static_cast<QSGGeometryNode*>(root->childAtIndex(3));
+        bgBlackNode = static_cast<QSGGeometryNode*>(root->childAtIndex(0));
+        bgWhiteNode = static_cast<QSGGeometryNode*>(root->childAtIndex(1));
+        gridSubdivNode = static_cast<QSGGeometryNode*>(root->childAtIndex(2));
+        gridBeatNode = static_cast<QSGGeometryNode*>(root->childAtIndex(3));
+        gridBarNode = static_cast<QSGGeometryNode*>(root->childAtIndex(4));
+        gridPitchNode = static_cast<QSGGeometryNode*>(root->childAtIndex(5));
+        gridOctaveNode = static_cast<QSGGeometryNode*>(root->childAtIndex(6));
+        notesBodyNode = static_cast<QSGGeometryNode*>(root->childAtIndex(7));
+        notesHandleNode = static_cast<QSGGeometryNode*>(root->childAtIndex(8));
+        playheadNode = static_cast<QSGGeometryNode*>(root->childAtIndex(9));
     }
 
     const int num_rows = std::max(1, max_pitch_ - min_pitch_ + 1);
@@ -245,114 +278,165 @@ QSGNode* PianoRollItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData* /
                                    controller_ ? static_cast<float>(controller_->patternLength()) * beat_width_ : 640.0f);
     const float total_h = static_cast<float>(num_rows) * row_height_;
 
-    // --- 1. Background Quads (Alternating black/white key rows) ---
-    auto* bgGeom = new QSGGeometry(QSGGeometry::defaultAttributes_ColoredPoint2D(), num_rows * 6);
-    bgGeom->setDrawingMode(QSGGeometry::DrawTriangles);
-    auto* vBg = bgGeom->vertexDataAsColoredPoint2D();
+    auto addQuad = [](QSGGeometry::Point2D* v, int& idx, float x0, float y0, float x1, float y1) {
+        v[idx++].set(x0, y0);
+        v[idx++].set(x1, y0);
+        v[idx++].set(x0, y1);
+        v[idx++].set(x1, y0);
+        v[idx++].set(x1, y1);
+        v[idx++].set(x0, y1);
+    };
 
-    int bgIdx = 0;
+    auto addLine = [](QSGGeometry::Point2D* v, int& idx, float x0, float y0, float x1, float y1) {
+        v[idx++].set(x0, y0);
+        v[idx++].set(x1, y1);
+    };
+
+    // --- 1. Background Quads ---
+    int count_black_rows = 0;
+    int count_white_rows = 0;
     for (int pitch = min_pitch_; pitch <= max_pitch_; ++pitch) {
-        const float y = Coordinates::pitch_to_y(pitch, row_height_, max_pitch_);
-        const bool is_black = Coordinates::is_black_key(pitch);
-
-        const unsigned char r = is_black ? 18 : 24;
-        const unsigned char g = is_black ? 18 : 24;
-        const unsigned char b = is_black ? 22 : 29;
-        const unsigned char a = 255;
-
-        const float y0 = y;
-        const float y1 = y + row_height_;
-
-        vBg[bgIdx++].set(0.0f, y0, r, g, b, a);
-        vBg[bgIdx++].set(total_w, y0, r, g, b, a);
-        vBg[bgIdx++].set(0.0f, y1, r, g, b, a);
-
-        vBg[bgIdx++].set(total_w, y0, r, g, b, a);
-        vBg[bgIdx++].set(total_w, y1, r, g, b, a);
-        vBg[bgIdx++].set(0.0f, y1, r, g, b, a);
+        if (Coordinates::is_black_key(pitch)) {
+            count_black_rows++;
+        } else {
+            count_white_rows++;
+        }
     }
-    bgNode->setGeometry(bgGeom);
-    bgNode->markDirty(QSGNode::DirtyGeometry);
 
-    // --- 2. Grid Lines (Horizontal row lines & Vertical 1/4 beat lines) ---
+    auto* bgBlackGeom = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), count_black_rows * 6);
+    bgBlackGeom->setDrawingMode(QSGGeometry::DrawTriangles);
+    auto* vBgBlack = bgBlackGeom->vertexDataAsPoint2D();
+
+    auto* bgWhiteGeom = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), count_white_rows * 6);
+    bgWhiteGeom->setDrawingMode(QSGGeometry::DrawTriangles);
+    auto* vBgWhite = bgWhiteGeom->vertexDataAsPoint2D();
+
+    int bIdx = 0, wIdx = 0;
+    for (int pitch = min_pitch_; pitch <= max_pitch_; ++pitch) {
+        const float y0 = Coordinates::pitch_to_y(pitch, row_height_, max_pitch_);
+        const float y1 = y0 + row_height_;
+        if (Coordinates::is_black_key(pitch)) {
+            addQuad(vBgBlack, bIdx, 0.0f, y0, total_w, y1);
+        } else {
+            addQuad(vBgWhite, wIdx, 0.0f, y0, total_w, y1);
+        }
+    }
+    bgBlackNode->setGeometry(bgBlackGeom);
+    bgBlackNode->markDirty(QSGNode::DirtyGeometry);
+    bgWhiteNode->setGeometry(bgWhiteGeom);
+    bgWhiteNode->markDirty(QSGNode::DirtyGeometry);
+
+    // --- 2. Grid Lines ---
     const double pattern_len = controller_ ? controller_->patternLength() : 4.0;
     const int num_subdivs = static_cast<int>(std::ceil(pattern_len * 4.0));
-    const int grid_line_count = (num_rows + 1) + (num_subdivs + 1);
 
-    auto* gridGeom = new QSGGeometry(QSGGeometry::defaultAttributes_ColoredPoint2D(), grid_line_count * 2);
-    gridGeom->setDrawingMode(QSGGeometry::DrawLines);
-    auto* vGrid = gridGeom->vertexDataAsColoredPoint2D();
+    int count_octave_lines = 0;
+    int count_pitch_lines = 0;
+    for (int pitch = min_pitch_; pitch <= max_pitch_ + 1; ++pitch) {
+        if ((pitch % 12) == 0) {
+            count_octave_lines++;
+        } else {
+            count_pitch_lines++;
+        }
+    }
 
-    int gIdx = 0;
-    // Horizontal pitch lines
+    auto* gridOctaveGeom = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), count_octave_lines * 2);
+    gridOctaveGeom->setDrawingMode(QSGGeometry::DrawLines);
+    auto* vGridOctave = gridOctaveGeom->vertexDataAsPoint2D();
+
+    auto* gridPitchGeom = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), count_pitch_lines * 2);
+    gridPitchGeom->setDrawingMode(QSGGeometry::DrawLines);
+    auto* vGridPitch = gridPitchGeom->vertexDataAsPoint2D();
+
+    int goIdx = 0, gpIdx = 0;
     for (int pitch = min_pitch_; pitch <= max_pitch_ + 1; ++pitch) {
         const float y = Coordinates::pitch_to_y(pitch, row_height_, max_pitch_);
-        const unsigned char r = 35, g = 36, b = 44, a = 255;
-        vGrid[gIdx++].set(0.0f, y, r, g, b, a);
-        vGrid[gIdx++].set(total_w, y, r, g, b, a);
+        if ((pitch % 12) == 0) {
+            addLine(vGridOctave, goIdx, 0.0f, y, total_w, y);
+        } else {
+            addLine(vGridPitch, gpIdx, 0.0f, y, total_w, y);
+        }
     }
+    gridOctaveNode->setGeometry(gridOctaveGeom);
+    gridOctaveNode->markDirty(QSGNode::DirtyGeometry);
+    gridPitchNode->setGeometry(gridPitchGeom);
+    gridPitchNode->markDirty(QSGNode::DirtyGeometry);
 
     // Vertical beat/subdivision lines
+    int count_bar_lines = 0;
+    int count_beat_lines = 0;
+    int count_subdiv_lines = 0;
+    for (int i = 0; i <= num_subdivs; ++i) {
+        if ((i % 16) == 0) {
+            count_bar_lines++;
+        } else if ((i % 4) == 0) {
+            count_beat_lines++;
+        } else {
+            count_subdiv_lines++;
+        }
+    }
+
+    auto* gridBarGeom = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), count_bar_lines * 2);
+    gridBarGeom->setDrawingMode(QSGGeometry::DrawLines);
+    auto* vGridBar = gridBarGeom->vertexDataAsPoint2D();
+
+    auto* gridBeatGeom = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), count_beat_lines * 2);
+    gridBeatGeom->setDrawingMode(QSGGeometry::DrawLines);
+    auto* vGridBeat = gridBeatGeom->vertexDataAsPoint2D();
+
+    auto* gridSubdivGeom = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), count_subdiv_lines * 2);
+    gridSubdivGeom->setDrawingMode(QSGGeometry::DrawLines);
+    auto* vGridSubdiv = gridSubdivGeom->vertexDataAsPoint2D();
+
+    int gbarIdx = 0, gbeatIdx = 0, gsubIdx = 0;
     for (int i = 0; i <= num_subdivs; ++i) {
         const float x = static_cast<float>(i) * (beat_width_ * 0.25f);
-        const bool is_whole_beat = ((i % 4) == 0);
-        const unsigned char r = is_whole_beat ? 60 : 35;
-        const unsigned char g = is_whole_beat ? 62 : 36;
-        const unsigned char b = is_whole_beat ? 76 : 44;
-        const unsigned char a = 255;
-
-        vGrid[gIdx++].set(x, 0.0f, r, g, b, a);
-        vGrid[gIdx++].set(x, total_h, r, g, b, a);
+        if ((i % 16) == 0) {
+            addLine(vGridBar, gbarIdx, x, 0.0f, x, total_h);
+        } else if ((i % 4) == 0) {
+            addLine(vGridBeat, gbeatIdx, x, 0.0f, x, total_h);
+        } else {
+            addLine(vGridSubdiv, gsubIdx, x, 0.0f, x, total_h);
+        }
     }
-    gridNode->setGeometry(gridGeom);
-    gridNode->markDirty(QSGNode::DirtyGeometry);
+    gridBarNode->setGeometry(gridBarGeom);
+    gridBarNode->markDirty(QSGNode::DirtyGeometry);
+    gridBeatNode->setGeometry(gridBeatGeom);
+    gridBeatNode->markDirty(QSGNode::DirtyGeometry);
+    gridSubdivNode->setGeometry(gridSubdivGeom);
+    gridSubdivNode->markDirty(QSGNode::DirtyGeometry);
 
-    // --- 3. Notes (Colored Quads) ---
+    // --- 3. Notes ---
     const auto* seq = controller_ ? controller_->active_sequence() : nullptr;
     const size_t note_count = seq ? seq->size() : 0;
 
-    auto* notesGeom = new QSGGeometry(QSGGeometry::defaultAttributes_ColoredPoint2D(), static_cast<int>(note_count) * 12);
-    notesGeom->setDrawingMode(QSGGeometry::DrawTriangles);
-    auto* vNotes = notesGeom->vertexDataAsColoredPoint2D();
+    auto* notesBodyGeom = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), static_cast<int>(note_count) * 6);
+    notesBodyGeom->setDrawingMode(QSGGeometry::DrawTriangles);
+    auto* vNotesBody = notesBodyGeom->vertexDataAsPoint2D();
 
-    int nIdx = 0;
+    auto* notesHandleGeom = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), static_cast<int>(note_count) * 6);
+    notesHandleGeom->setDrawingMode(QSGGeometry::DrawTriangles);
+    auto* vNotesHandle = notesHandleGeom->vertexDataAsPoint2D();
+
+    int nbIdx = 0, nhIdx = 0;
     if (seq) {
         for (const auto& note : seq->notes()) {
             const float x0 = Coordinates::beat_to_x(note.start, beat_width_);
             const float x1 = std::max(x0 + 6.0f, Coordinates::beat_to_x(note.start + note.duration, beat_width_));
             const float y0 = Coordinates::pitch_to_y(note.pitch, row_height_, max_pitch_) + 1.0f;
             const float y1 = y0 + row_height_ - 2.0f;
-
-            // Note body color: #3b82f6 (blue)
-            const unsigned char br = 59, bg_c = 130, bb = 246, ba = 255;
-            // Resize handle color: #93c5fd (light blue)
-            const unsigned char hr = 147, hg = 197, hb = 253, ha = 255;
-
             const float x_handle = std::max(x0 + 2.0f, x1 - 6.0f);
 
-            // Note Main Body Quad (x0 to x_handle)
-            vNotes[nIdx++].set(x0, y0, br, bg_c, bb, ba);
-            vNotes[nIdx++].set(x_handle, y0, br, bg_c, bb, ba);
-            vNotes[nIdx++].set(x0, y1, br, bg_c, bb, ba);
-
-            vNotes[nIdx++].set(x_handle, y0, br, bg_c, bb, ba);
-            vNotes[nIdx++].set(x_handle, y1, br, bg_c, bb, ba);
-            vNotes[nIdx++].set(x0, y1, br, bg_c, bb, ba);
-
-            // Note Resize Handle Quad (x_handle to x1)
-            vNotes[nIdx++].set(x_handle, y0, hr, hg, hb, ha);
-            vNotes[nIdx++].set(x1, y0, hr, hg, hb, ha);
-            vNotes[nIdx++].set(x_handle, y1, hr, hg, hb, ha);
-
-            vNotes[nIdx++].set(x1, y0, hr, hg, hb, ha);
-            vNotes[nIdx++].set(x1, y1, hr, hg, hb, ha);
-            vNotes[nIdx++].set(x_handle, y1, hr, hg, hb, ha);
+            addQuad(vNotesBody, nbIdx, x0, y0, x_handle, y1);
+            addQuad(vNotesHandle, nhIdx, x_handle, y0, x1, y1);
         }
     }
-    notesNode->setGeometry(notesGeom);
-    notesNode->markDirty(QSGNode::DirtyGeometry);
+    notesBodyNode->setGeometry(notesBodyGeom);
+    notesBodyNode->markDirty(QSGNode::DirtyGeometry);
+    notesHandleNode->setGeometry(notesHandleGeom);
+    notesHandleNode->markDirty(QSGNode::DirtyGeometry);
 
-    // --- 4. Playhead (Vertical Line) ---
+    // --- 4. Playhead ---
     auto* playheadGeom = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), 2);
     playheadGeom->setDrawingMode(QSGGeometry::DrawLines);
     playheadGeom->setLineWidth(2.0f);
