@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <atomic>
 #include <chrono>
+#include <bit>
 
 namespace saudade::audio {
 
@@ -104,11 +105,69 @@ public:
     bool wait_for_flush(uint64_t generation,
                         std::chrono::milliseconds timeout = std::chrono::milliseconds(500)) noexcept;
 
-    /// Synchronous helper for control thread: requests flush and waits for acknowledgment.
-    /// Resets control-side schedule tracking to 0 after acknowledgment.
     bool flush_events(std::chrono::milliseconds timeout = std::chrono::milliseconds(500)) noexcept;
 
+    /// Double-buffered event track API for pattern playback and looping.
+    void set_track_events(const std::vector<events::TimelineEvent>& events) noexcept;
+    void clear_track_events() noexcept;
+
+    /// Realtime Metronome API.
+    void set_metronome_enabled(bool enabled) noexcept;
+    [[nodiscard]] bool is_metronome_enabled() const noexcept;
+    void set_metronome_volume(float vol) noexcept;
+    [[nodiscard]] float metronome_volume() const noexcept;
+
+    /// Live audition API. Hard realtime safe: lock-free, zero allocation.
+    void audition_note_on(double pitch, float velocity = 0.8f) noexcept;
+    void audition_note_off() noexcept;
+
+    struct TelemetrySnapshot {
+        float peak_left{0.0f};
+        float peak_right{0.0f};
+        float rms_left{0.0f};
+        float rms_right{0.0f};
+        uint64_t sequence{0};
+    };
+
+    void set_master_gain_db(float gain_db) noexcept;
+    [[nodiscard]] float master_gain_db() const noexcept;
+    [[nodiscard]] TelemetrySnapshot telemetry() const noexcept;
+
+    /// Preallocated event track buffer structure.
+    struct EventTrackBuffer {
+        static constexpr size_t kMaxEvents = 32768;
+        std::array<events::TimelineEvent, kMaxEvents> events{};
+        size_t count{0};
+    };
+
+    [[nodiscard]] const EventTrackBuffer& active_track() const noexcept {
+        return track_buffers_[active_track_idx_.load(std::memory_order_acquire)];
+    }
+
+    struct MetronomeState {
+        bool active{false};
+        float phase{0.0f};
+        float phase_step{0.0f};
+        float envelope{0.0f};
+        float decay{0.993f};
+        int64_t last_beat{-1};
+
+        void reset() noexcept {
+            active = false;
+            phase = 0.0f;
+            phase_step = 0.0f;
+            envelope = 0.0f;
+            decay = 0.993f;
+            last_beat = -1;
+        }
+    };
+
+    static constexpr events::NoteId kAuditionNoteId = 0xE000000000000001ULL;
+
 private:
+    void apply_master_gain_and_publish_telemetry(AudioBlock& block) noexcept;
+    void publish_silence_telemetry() noexcept;
+
     uint32_t max_block_size_{kDefaultMaxBlockSize};
     PlanPublisher publisher_;
     time::TransportController transport_;
@@ -118,6 +177,35 @@ private:
     alignas(64) std::atomic<uint64_t> flush_requested_{0};
     alignas(64) std::atomic<uint64_t> flush_acknowledged_{0};
     uint64_t next_flush_request_{0};
+
+    // Track double-buffer for infinite zero-alloc looping
+    std::array<EventTrackBuffer, 2> track_buffers_{};
+    std::atomic<uint32_t> active_track_idx_{0};
+
+    // Metronome state
+    std::atomic<bool> metronome_enabled_{false};
+    std::atomic<float> metronome_volume_{0.4f};
+    MetronomeState metronome_state_{};
+
+    // Live Audition atomics
+    std::atomic<double> audition_pitch_{60.0};
+    std::atomic<float> audition_velocity_{0.8f};
+    std::atomic<uint64_t> audition_trigger_{0};
+    std::atomic<uint64_t> audition_release_{0};
+    uint64_t last_audition_trigger_{0};
+    uint64_t last_audition_release_{0};
+    bool audition_active_{false};
+
+    std::atomic<uint32_t> master_gain_bits_{
+        std::bit_cast<uint32_t>(1.0f)};
+    std::atomic<uint32_t> peak_left_bits_{0};
+    std::atomic<uint32_t> peak_right_bits_{0};
+    std::atomic<uint32_t> rms_left_bits_{0};
+    std::atomic<uint32_t> rms_right_bits_{0};
+    std::atomic<uint64_t> telemetry_sequence_{0};
+
+    static_assert(std::atomic<uint32_t>::is_always_lock_free);
+    static_assert(std::atomic<uint64_t>::is_always_lock_free);
 };
 
 } // namespace saudade::audio

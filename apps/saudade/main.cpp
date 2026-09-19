@@ -22,14 +22,17 @@ namespace {
 std::unique_ptr<saudade::renderplan::RenderPlan> create_synth_plan() {
     saudade::graph::GraphModel graph;
     const auto synth_node = graph.add_poly_synth_node();
-    const auto gain_node = graph.add_gain_node(-12.0f);
+    const auto gain_left = graph.add_gain_node(-9.0f);
+    const auto gain_right = graph.add_gain_node(-9.0f);
     const auto out_node = graph.add_output_node(2);
 
-    graph.connect(synth_node, saudade::graph::PolySynthNode::kPortOut,
-                  gain_node, saudade::graph::GainNode::kPortIn);
-    graph.connect(gain_node, saudade::graph::GainNode::kPortOut,
+    graph.connect(synth_node, saudade::graph::PolySynthNode::kPortLeft,
+                  gain_left, saudade::graph::GainNode::kPortIn);
+    graph.connect(synth_node, saudade::graph::PolySynthNode::kPortRight,
+                  gain_right, saudade::graph::GainNode::kPortIn);
+    graph.connect(gain_left, saudade::graph::GainNode::kPortOut,
                   out_node, saudade::graph::OutputNode::kPortLeft);
-    graph.connect(gain_node, saudade::graph::GainNode::kPortOut,
+    graph.connect(gain_right, saudade::graph::GainNode::kPortOut,
                   out_node, saudade::graph::OutputNode::kPortRight);
 
     return saudade::graph::GraphCompiler::compile(graph);

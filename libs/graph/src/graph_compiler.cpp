@@ -56,7 +56,9 @@ std::unique_ptr<renderplan::RenderPlan> GraphCompiler::compile(const GraphModel&
                     throw GraphCompilationException("Invalid output port for SineNode: " + conn.from_port);
                 }
             } else if constexpr (std::is_same_v<T, PolySynthNode>) {
-                if (conn.from_port != PolySynthNode::kPortOut) {
+                if (conn.from_port != PolySynthNode::kPortOut &&
+                    conn.from_port != PolySynthNode::kPortLeft &&
+                    conn.from_port != PolySynthNode::kPortRight) {
                     throw GraphCompilationException("Invalid output port for PolySynthNode: " + conn.from_port);
                 }
             } else if constexpr (std::is_same_v<T, GainNode>) {
@@ -151,6 +153,7 @@ std::unique_ptr<renderplan::RenderPlan> GraphCompiler::compile(const GraphModel&
 
     // 5. Buffer slot allocation and step generation
     std::map<NodeId, uint32_t> node_output_slots;
+    std::map<NodeId, uint32_t> synth_right_output_slots;
     uint32_t next_scratch_slot = 0;
     size_t next_sine_state = 0;
     size_t next_synth_state = 0;
@@ -172,17 +175,30 @@ std::unique_ptr<renderplan::RenderPlan> GraphCompiler::compile(const GraphModel&
                     .state_index = state_idx
                 });
             } else if constexpr (std::is_same_v<T, PolySynthNode>) {
-                const uint32_t out_slot = next_scratch_slot++;
-                node_output_slots[id] = out_slot;
+                const uint32_t left_slot = next_scratch_slot++;
+                const uint32_t right_slot = next_scratch_slot++;
+                node_output_slots[id] = left_slot;
+                synth_right_output_slots[id] = right_slot;
 
                 const uint32_t state_idx = static_cast<uint32_t>(next_synth_state++);
                 steps.push_back(renderplan::PolySynthStep{
-                    .output_buffer_slot = out_slot,
-                    .state_index = state_idx
+                    .output_left_buffer_slot = left_slot,
+                    .output_right_buffer_slot = right_slot,
+                    .state_index = state_idx,
+                    .attack_seconds = std::clamp(node.attack_seconds, 0.001f, 2.0f),
+                    .decay_seconds = std::clamp(node.decay_seconds, 0.005f, 4.0f),
+                    .sustain = std::clamp(node.sustain, 0.0f, 1.0f),
+                    .release_seconds = std::clamp(node.release_seconds, 0.005f, 6.0f),
+                    .cutoff_hz = std::clamp(node.cutoff_hz, 40.0f, 18000.0f),
+                    .resonance = std::clamp(node.resonance, 0.0f, 0.95f),
+                    .character = std::clamp(node.character, 0.0f, 1.0f)
                 });
             } else if constexpr (std::is_same_v<T, GainNode>) {
                 const auto& in_conn = input_port_connections.at({id, GainNode::kPortIn});
-                const uint32_t in_slot = node_output_slots.at(in_conn.from_node);
+                uint32_t in_slot = node_output_slots.at(in_conn.from_node);
+                if (in_conn.from_port == PolySynthNode::kPortRight) {
+                    in_slot = synth_right_output_slots.at(in_conn.from_node);
+                }
 
                 const uint32_t out_slot = next_scratch_slot++;
                 node_output_slots[id] = out_slot;
@@ -197,8 +213,14 @@ std::unique_ptr<renderplan::RenderPlan> GraphCompiler::compile(const GraphModel&
                 const auto& conn_l = input_port_connections.at({id, OutputNode::kPortLeft});
                 const auto& conn_r = input_port_connections.at({id, OutputNode::kPortRight});
 
-                const uint32_t slot_l = node_output_slots.at(conn_l.from_node);
-                const uint32_t slot_r = node_output_slots.at(conn_r.from_node);
+                uint32_t slot_l = node_output_slots.at(conn_l.from_node);
+                uint32_t slot_r = node_output_slots.at(conn_r.from_node);
+                if (conn_l.from_port == PolySynthNode::kPortRight) {
+                    slot_l = synth_right_output_slots.at(conn_l.from_node);
+                }
+                if (conn_r.from_port == PolySynthNode::kPortRight) {
+                    slot_r = synth_right_output_slots.at(conn_r.from_node);
+                }
 
                 steps.push_back(renderplan::RouteStep{
                     .source_buffer_slot = slot_l,

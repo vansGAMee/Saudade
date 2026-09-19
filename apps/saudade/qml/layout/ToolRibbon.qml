@@ -6,12 +6,12 @@ import "../components"
 Rectangle {
     id: ribbon
 
+    property var controller: null
     property string currentPitch: "C4"
     property int currentVel: 96
     property string currentLen: "1/4"
-    property string currentGrid: "1/16"
-    property string currentScale: "D Aeolian"
-    property string activeTool: "pencil" // "select", "pencil", "slice", "eraser"
+    property string currentGrid: controller ? controller.snapStep : "1/16"
+    property string activeTool: "pencil" // "select", "pencil", "eraser"
     property real zoomLevel: 1.0
 
     signal toolChanged(string toolName)
@@ -141,12 +141,12 @@ Rectangle {
             }
             Rectangle {
                 anchors.verticalCenter: parent.verticalCenter
-                width: 34
+                width: 40
                 height: 20
                 radius: 2
-                color: SaudadeTheme.bgCanvas
+                color: gridMouseArea.containsMouse ? SaudadeTheme.bgControlHover : SaudadeTheme.bgCanvas
                 border.width: 1
-                border.color: SaudadeTheme.lineSoft
+                border.color: gridMouseArea.containsMouse ? SaudadeTheme.lineNormal : SaudadeTheme.lineSoft
                 Text {
                     anchors.centerIn: parent
                     text: ribbon.currentGrid
@@ -154,63 +154,23 @@ Rectangle {
                     font.pixelSize: 10
                     color: SaudadeTheme.textSecondary
                 }
-            }
-        }
-
-        // Hairline separator
-        Rectangle {
-            anchors.verticalCenter: parent.verticalCenter
-            width: 1
-            height: 14
-            color: SaudadeTheme.lineSoft
-        }
-
-        // SCALE
-        Row {
-            spacing: 4
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: "SCALE"
-                font.family: SaudadeTheme.fontSans
-                font.pixelSize: 9
-                font.weight: Font.Medium
-                color: SaudadeTheme.textMuted
-            }
-            Rectangle {
-                anchors.verticalCenter: parent.verticalCenter
-                width: scaleText.implicitWidth + 12
-                height: 20
-                radius: 2
-                color: SaudadeTheme.bgPanelRaised
-                border.width: 1
-                border.color: SaudadeTheme.lineNormal
-                Text {
-                    id: scaleText
-                    anchors.centerIn: parent
-                    text: ribbon.currentScale
-                    font.family: SaudadeTheme.fontSans
-                    font.pixelSize: 10
-                    font.weight: Font.Medium
-                    color: SaudadeTheme.textPrimary
+                MouseArea {
+                    id: gridMouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        var steps = ["1 Bar", "1/2", "1/4", "1/8", "1/16", "1/32", "Off"];
+                        var curIdx = steps.indexOf(ribbon.currentGrid);
+                        var nextIdx = (curIdx + 1) % steps.length;
+                        if (ribbon.controller) {
+                            ribbon.controller.setSnapStep(steps[nextIdx]);
+                        }
+                    }
                 }
             }
         }
 
-        // Quick action chips
-        SaudadeButton {
-            text: "Fold"
-            variant: "secondary"
-            compact: true
-            tooltipText: "Fold piano roll to active scale"
-        }
-        SaudadeButton {
-            text: "Ghosts"
-            variant: "secondary"
-            checkable: true
-            checked: true
-            compact: true
-            tooltipText: "Toggle ghost notes display"
-        }
     }
 
     // Right Action & Tool Buttons
@@ -262,22 +222,9 @@ Rectangle {
                 }
 
                 SaudadeIconButton {
-                    iconName: "slice"
-                    variant: ribbon.activeTool === "slice" ? "primary" : "subtle"
-                    tooltipText: "Razor / Slice (C)"
-                    width: 22
-                    height: 22
-                    iconSize: 12
-                    onClicked: {
-                        ribbon.activeTool = "slice";
-                        ribbon.toolChanged("slice");
-                    }
-                }
-
-                SaudadeIconButton {
                     iconName: "eraser"
                     variant: ribbon.activeTool === "eraser" ? "primary" : "subtle"
-                    tooltipText: "Eraser (E)"
+                    tooltipText: "Eraser — hold E for temporary erase"
                     width: 22
                     height: 22
                     iconSize: 12
@@ -299,7 +246,12 @@ Rectangle {
                 variant: "secondary"
                 compact: true
                 tooltipText: "Quantize Note Starts (Q)"
-                onClicked: ribbon.quantizeRequested()
+                onClicked: {
+                    if (ribbon.controller) {
+                        ribbon.controller.quantizeSelected();
+                    }
+                    ribbon.quantizeRequested();
+                }
             }
 
             SaudadeButton {
@@ -307,7 +259,12 @@ Rectangle {
                 variant: "secondary"
                 compact: true
                 tooltipText: "Subtle Timing & Velocity Variations"
-                onClicked: ribbon.humanizeRequested()
+                onClicked: {
+                    if (ribbon.controller) {
+                        ribbon.controller.humanizeSelected();
+                    }
+                    ribbon.humanizeRequested();
+                }
             }
         }
 

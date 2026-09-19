@@ -67,22 +67,9 @@ Rectangle {
                     }
                 }
 
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "Pitch Bend"
-                    font.family: SaudadeTheme.fontSans
-                    font.pixelSize: 9
-                    color: SaudadeTheme.textMuted
-                }
-
-                Text {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: "Aftertouch"
-                    font.family: SaudadeTheme.fontSans
-                    font.pixelSize: 9
-                    color: SaudadeTheme.textMuted
-                }
             }
+
+            readonly property var velStats: velocityLane.controller ? velocityLane.controller.getVelocityStats() : ({min: 0, avg: 0, max: 0})
 
             // Stats
             Row {
@@ -92,7 +79,7 @@ Rectangle {
                 spacing: 8
 
                 Text {
-                    text: "MIN: 48"
+                    text: "MIN: " + parent.parent.velStats.min
                     font.family: SaudadeTheme.fontMono
                     font.pixelSize: 8
                     color: SaudadeTheme.textMuted
@@ -103,7 +90,7 @@ Rectangle {
                     color: SaudadeTheme.lineSoft
                 }
                 Text {
-                    text: "AVG: 96"
+                    text: "AVG: " + parent.parent.velStats.avg
                     font.family: SaudadeTheme.fontMono
                     font.pixelSize: 8
                     color: SaudadeTheme.textMuted
@@ -114,7 +101,7 @@ Rectangle {
                     color: SaudadeTheme.lineSoft
                 }
                 Text {
-                    text: "MAX: 127"
+                    text: "MAX: " + parent.parent.velStats.max
                     font.family: SaudadeTheme.fontMono
                     font.pixelSize: 8
                     font.weight: Font.DemiBold
@@ -199,8 +186,6 @@ Rectangle {
                     width: 4000
                     height: parent.height
 
-                    // Dynamic Velocity Pins generated from active sequence
-                    // Whenever notesChanged is emitted, we redraw the stalks
                     Canvas {
                         id: pinsCanvas
                         anchors.fill: parent
@@ -220,7 +205,7 @@ Rectangle {
                             var curBeat = velocityLane.controller.currentBeat;
                             var h = height;
 
-                            // Draw subtle beat lines in velocity lane
+                            // Draw subtle beat lines
                             ctx.strokeStyle = "#20232B";
                             ctx.lineWidth = 1;
                             for (var b = 0; b <= patLen * 4; b++) {
@@ -231,28 +216,29 @@ Rectangle {
                                 ctx.stroke();
                             }
 
-                            // Sample pins representation across beats
-                            var pinBeats = [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5];
-                            var pinValues = [0.8, 0.7, 0.95, 0.6, 0.85, 0.75, 0.9, 0.65];
-
-                            for (var i = 0; i < pinBeats.length; i++) {
-                                var px = pinBeats[i] * velocityLane.beatWidth + 8;
-                                var val = pinValues[i];
+                            // Render real note velocity stalks
+                            var notes = velocityLane.controller.getNotesData();
+                            for (var i = 0; i < notes.length; i++) {
+                                var note = notes[i];
+                                var px = note.start * velocityLane.beatWidth + 4;
+                                var val = note.velocity;
                                 var barH = val * (h - 16);
                                 var py = h - barH;
 
-                                // Stalk
-                                ctx.strokeStyle = (i === 2) ? "#F1F0EC" : "#8FA5BA";
-                                ctx.lineWidth = (i === 2) ? 2 : 1.5;
+                                var isSel = note.selected;
+
+                                // Stalk line
+                                ctx.strokeStyle = isSel ? "#F1EEE7" : "#8FA5BA";
+                                ctx.lineWidth = isSel ? 2.5 : 1.5;
                                 ctx.beginPath();
                                 ctx.moveTo(px, h);
                                 ctx.lineTo(px, py);
                                 ctx.stroke();
 
                                 // Machined Cap
-                                ctx.fillStyle = (i === 2) ? "#F1F0EC" : "#8FA5BA";
+                                ctx.fillStyle = isSel ? "#FFFFFF" : "#8FA5BA";
                                 ctx.beginPath();
-                                ctx.arc(px, py, (i === 2) ? 3.5 : 2.5, 0, 2 * Math.PI);
+                                ctx.arc(px, py, isSel ? 3.5 : 2.5, 0, 2 * Math.PI);
                                 ctx.fill();
                             }
 
@@ -267,9 +253,69 @@ Rectangle {
                         }
                     }
 
+                    MouseArea {
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+
+                        property var draggedNote: null
+                        property bool gestureStarted: false
+
+                        function updateVelocityAt(mouseX, mouseY) {
+                            if (!velocityLane.controller) return;
+                            var notes = velocityLane.controller.getNotesData();
+                            var h = height;
+                            var newVel = Math.min(1.0, Math.max(0.01, (h - mouseY) / Math.max(1.0, h - 16)));
+
+                            if (!draggedNote) {
+                                var bestDist = 20.0;
+                                for (var i = 0; i < notes.length; i++) {
+                                    var nx = notes[i].start * velocityLane.beatWidth + 4;
+                                    var d = Math.abs(mouseX - nx);
+                                    if (d < bestDist) {
+                                        bestDist = d;
+                                        draggedNote = notes[i];
+                                    }
+                                }
+                            }
+
+                            if (draggedNote) {
+                                if (!gestureStarted) {
+                                    velocityLane.controller.beginVelocityGesture(draggedNote.id);
+                                    gestureStarted = true;
+                                }
+                                velocityLane.controller.previewVelocityGesture(newVel);
+                                velocityLane.controller.auditionNoteOn(draggedNote.pitch, newVel);
+                                pinsCanvas.redraw();
+                            }
+                        }
+
+                        onPressed: (mouse) => {
+                            draggedNote = null;
+                            gestureStarted = false;
+                            updateVelocityAt(mouse.x, mouse.y);
+                        }
+
+                        onPositionChanged: (mouse) => {
+                            if (pressed) {
+                                updateVelocityAt(mouse.x, mouse.y);
+                            }
+                        }
+
+                        onReleased: {
+                            if (velocityLane.controller) {
+                                velocityLane.controller.auditionNoteOff();
+                                velocityLane.controller.commitVelocityGesture();
+                            }
+                            draggedNote = null;
+                            gestureStarted = false;
+                        }
+                    }
+
                     Connections {
                         target: velocityLane.controller
                         function onNotesChanged() { pinsCanvas.redraw(); }
+                        function onSelectionChanged() { pinsCanvas.redraw(); }
                         function onCurrentBeatChanged() { pinsCanvas.redraw(); }
                     }
                 }

@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import saudade.ui 1.0
 
 import "qml/theme"
@@ -13,12 +14,330 @@ ApplicationWindow {
     height: 960
     minimumWidth: 960
     minimumHeight: 640
-    title: "Saudade — Precision Audio Workstation"
+    title: (editorController.projectDirty ? "* " : "")
+           + (editorController.projectPath.length > 0
+              ? editorController.projectPath.split("/").pop() : "Untitled")
+           + " — Saudade"
     color: SaudadeTheme.bgCanvas
 
     property string activeViewMode: "PIANO ROLL" // "ARRANGEMENT", "PIANO ROLL", "MIXER", "DEVICES"
     property bool drawerCollapsed: true
     property real currentZoom: 1.0
+    property string pendingProjectAction: ""
+    property bool forceClosing: false
+
+    function textEditorOwnsFocus() {
+        return activeFocusItem
+                && (activeFocusItem instanceof TextInput
+                    || activeFocusItem instanceof TextEdit)
+    }
+
+    function requestProjectAction(action) {
+        if (editorController.projectDirty) {
+            pendingProjectAction = action
+            unsavedDialog.open()
+        } else {
+            performProjectAction(action)
+        }
+    }
+
+    function performProjectAction(action) {
+        if (action === "new") {
+            editorController.newProject()
+        } else if (action === "open") {
+            openProjectDialog.open()
+        } else if (action === "close") {
+            forceClosing = true
+            root.close()
+        }
+        pendingProjectAction = ""
+    }
+
+    function saveThenContinue() {
+        if (editorController.projectPath.length === 0) {
+            saveProjectDialog.open()
+        } else if (editorController.saveProject()) {
+            performProjectAction(pendingProjectAction)
+        }
+    }
+
+    onClosing: function(close) {
+        if (!forceClosing && editorController.projectDirty) {
+            close.accepted = false
+            pendingProjectAction = "close"
+            unsavedDialog.open()
+        }
+    }
+
+    Component.onCompleted: {
+        if (editorController.recoveryAvailable)
+            recoveryDialog.open()
+    }
+
+    Dialog {
+        id: recoveryDialog
+        modal: true
+        anchors.centerIn: parent
+        width: 440
+        title: "Recover unsaved work?"
+        closePolicy: Popup.NoAutoClose
+        contentItem: Column {
+            spacing: 14
+            Text {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: "Saudade found an autosave from a session that did not finish cleanly."
+                font.family: SaudadeTheme.fontSans
+                font.pixelSize: 13
+                color: SaudadeTheme.textPrimary
+            }
+            Row {
+                anchors.right: parent.right
+                spacing: 8
+                SaudadeButton {
+                    text: "Discard"
+                    onClicked: {
+                        editorController.discardRecovery()
+                        recoveryDialog.close()
+                    }
+                }
+                SaudadeButton {
+                    text: "Recover"
+                    variant: "primary"
+                    onClicked: {
+                        editorController.recoverAutosave()
+                        recoveryDialog.close()
+                    }
+                }
+            }
+        }
+    }
+
+    FileDialog {
+        id: openProjectDialog
+        title: "Open Saudade Project"
+        nameFilters: ["Saudade Project (*.dawproj)"]
+        fileMode: FileDialog.OpenFile
+        onAccepted: editorController.openProject(selectedFile)
+    }
+
+    FileDialog {
+        id: saveProjectDialog
+        title: "Save Saudade Project"
+        nameFilters: ["Saudade Project (*.dawproj)"]
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "dawproj"
+        onAccepted: {
+            if (editorController.saveProjectAs(selectedFile)
+                    && root.pendingProjectAction.length > 0)
+                root.performProjectAction(root.pendingProjectAction)
+        }
+    }
+
+    FileDialog {
+        id: importMidiDialog
+        title: "Import MIDI"
+        nameFilters: ["MIDI Files (*.mid *.midi)"]
+        fileMode: FileDialog.OpenFile
+        onAccepted: editorController.importMidi(
+                            selectedFile,
+                            Math.round(editorController.currentBeat * 4) / 4)
+    }
+
+    FileDialog {
+        id: exportWavDialog
+        title: "Export Stereo WAV"
+        nameFilters: ["Wave Audio (*.wav)"]
+        fileMode: FileDialog.SaveFile
+        defaultSuffix: "wav"
+        onAccepted: editorController.exportWav(selectedFile)
+    }
+
+    Dialog {
+        id: exportProgressDialog
+        modal: true
+        anchors.centerIn: parent
+        width: 420
+        title: "Rendering audio"
+        visible: editorController.exportInProgress
+        closePolicy: Popup.NoAutoClose
+        contentItem: Column {
+            spacing: 12
+            ProgressBar {
+                width: parent.width
+                from: 0
+                to: 1
+                value: editorController.exportProgress
+            }
+            Row {
+                anchors.right: parent.right
+                spacing: 8
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: Math.round(editorController.exportProgress * 100) + "%"
+                    font.family: SaudadeTheme.fontMono
+                    font.pixelSize: 11
+                    color: SaudadeTheme.textSecondary
+                }
+                SaudadeButton {
+                    text: "Cancel"
+                    onClicked: editorController.cancelExport()
+                }
+            }
+        }
+    }
+
+    DropArea {
+        anchors.fill: parent
+        z: 1000
+        onDropped: function(drop) {
+            if (!drop.hasUrls || drop.urls.length === 0) return
+            var source = drop.urls[0].toString()
+            var lower = source.toLowerCase()
+            if (lower.endsWith(".mid") || lower.endsWith(".midi")) {
+                editorController.importMidi(
+                            source,
+                            Math.round(editorController.currentBeat * 4) / 4)
+                drop.accept()
+            }
+        }
+    }
+
+    Dialog {
+        id: unsavedDialog
+        modal: true
+        anchors.centerIn: parent
+        width: 420
+        title: "Save changes?"
+        closePolicy: Popup.NoAutoClose
+
+        contentItem: Column {
+            spacing: 14
+            Text {
+                width: parent.width
+                wrapMode: Text.WordWrap
+                text: "This project has changes that have not been saved."
+                font.family: SaudadeTheme.fontSans
+                font.pixelSize: 13
+                color: SaudadeTheme.textPrimary
+            }
+            Row {
+                anchors.right: parent.right
+                spacing: 8
+                SaudadeButton {
+                    text: "Cancel"
+                    onClicked: {
+                        root.pendingProjectAction = ""
+                        unsavedDialog.close()
+                    }
+                }
+                SaudadeButton {
+                    text: "Discard"
+                    onClicked: {
+                        unsavedDialog.close()
+                        root.performProjectAction(root.pendingProjectAction)
+                    }
+                }
+                SaudadeButton {
+                    text: "Save"
+                    variant: "primary"
+                    onClicked: {
+                        unsavedDialog.close()
+                        root.saveThenContinue()
+                    }
+                }
+            }
+        }
+    }
+
+    Shortcut {
+        sequences: [StandardKey.New]
+        enabled: !root.textEditorOwnsFocus()
+        onActivated: root.requestProjectAction("new")
+    }
+    Shortcut {
+        sequences: [StandardKey.Open]
+        enabled: !root.textEditorOwnsFocus()
+        onActivated: root.requestProjectAction("open")
+    }
+    Shortcut {
+        sequences: [StandardKey.Save]
+        enabled: !root.textEditorOwnsFocus()
+        onActivated: {
+            if (editorController.projectPath.length === 0)
+                saveProjectDialog.open()
+            else
+                editorController.saveProject()
+        }
+    }
+    Shortcut {
+        sequence: "Ctrl+Shift+S"
+        enabled: !root.textEditorOwnsFocus()
+        onActivated: saveProjectDialog.open()
+    }
+    Shortcut {
+        sequence: "Ctrl+I"
+        enabled: !root.textEditorOwnsFocus()
+        onActivated: importMidiDialog.open()
+    }
+    Shortcut {
+        sequence: "Ctrl+E"
+        enabled: !root.textEditorOwnsFocus() && !editorController.exportInProgress
+        onActivated: exportWavDialog.open()
+    }
+    Shortcut {
+        sequence: "Space"
+        enabled: !root.textEditorOwnsFocus()
+        onActivated: {
+            if (editorController.isPlaying) editorController.stop()
+            else editorController.play()
+        }
+    }
+    Shortcut {
+        sequences: [StandardKey.Undo]
+        enabled: root.activeViewMode === "PIANO ROLL" && !root.textEditorOwnsFocus()
+        onActivated: editorController.undo()
+    }
+    Shortcut {
+        sequences: ["Ctrl+Shift+Z", "Ctrl+Y"]
+        enabled: root.activeViewMode === "PIANO ROLL" && !root.textEditorOwnsFocus()
+        onActivated: editorController.redo()
+    }
+    Shortcut {
+        sequences: [StandardKey.SelectAll]
+        enabled: root.activeViewMode === "PIANO ROLL" && !root.textEditorOwnsFocus()
+        onActivated: editorController.selectAll()
+    }
+    Shortcut {
+        sequences: [StandardKey.Copy]
+        enabled: root.activeViewMode === "PIANO ROLL" && !root.textEditorOwnsFocus()
+        onActivated: editorController.copy()
+    }
+    Shortcut {
+        sequences: [StandardKey.Paste]
+        enabled: root.activeViewMode === "PIANO ROLL" && !root.textEditorOwnsFocus()
+        onActivated: editorController.paste()
+    }
+    Shortcut {
+        sequence: "Ctrl+D"
+        enabled: root.activeViewMode === "PIANO ROLL" && !root.textEditorOwnsFocus()
+        onActivated: editorController.duplicate()
+    }
+    Shortcut {
+        sequences: ["Delete", "Backspace"]
+        enabled: root.activeViewMode === "PIANO ROLL" && !root.textEditorOwnsFocus()
+        onActivated: editorController.deleteSelected()
+    }
+    Shortcut {
+        sequence: "B"
+        enabled: root.activeViewMode === "PIANO ROLL" && !root.textEditorOwnsFocus()
+        onActivated: toolRibbon.activeTool = "pencil"
+    }
+    Shortcut {
+        sequence: "V"
+        enabled: root.activeViewMode === "PIANO ROLL" && !root.textEditorOwnsFocus()
+        onActivated: toolRibbon.activeTool = "select"
+    }
 
     // Coordinate & Pitch configuration for Piano Roll
     readonly property int minPitch: 48 // C3
@@ -36,8 +355,7 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         controller: editorController
-        onSearchTriggered: console.log("Search triggered")
-        onSettingsTriggered: console.log("Settings triggered")
+        activeView: root.activeViewMode
     }
 
     // ==========================================
@@ -49,6 +367,7 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         activeView: root.activeViewMode
+        controller: editorController
         onViewSelected: (viewName) => {
             root.activeViewMode = viewName;
         }
@@ -64,6 +383,7 @@ ApplicationWindow {
         anchors.right: parent.right
         visible: root.activeViewMode === "PIANO ROLL"
         height: visible ? SaudadeTheme.toolRibbonHeight : 0
+        controller: editorController
         zoomLevel: root.currentZoom
         onZoomInRequested: root.currentZoom = Math.min(2.0, root.currentZoom + 0.25)
         onZoomOutRequested: root.currentZoom = Math.max(0.5, root.currentZoom - 0.25)
@@ -89,6 +409,7 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         collapsed: true
+        controller: editorController
         visible: root.activeViewMode !== "DEVICES"
         height: visible ? (collapsed ? 28 : SaudadeTheme.deviceRackHeight) : 0
     }
@@ -111,6 +432,9 @@ ApplicationWindow {
             anchors.left: parent.left
             collapsed: root.drawerCollapsed
             onCloseRequested: root.drawerCollapsed = true
+            onOpenProjectRequested: root.requestProjectAction("open")
+            onImportMidiRequested: importMidiDialog.open()
+            onExportWavRequested: exportWavDialog.open()
         }
 
         // Center Views Area
@@ -187,9 +511,21 @@ ApplicationWindow {
                                 width: pianoRollFlickable.contentWidth
                                 height: parent.height
 
+                                MouseArea {
+                                    anchors.fill: parent
+                                    z: 1
+                                    onClicked: (mouse) => {
+                                        var clickedBeat = mouse.x / root.beatWidth;
+                                        if (editorController) {
+                                            editorController.seekBeats(Math.max(0.0, clickedBeat));
+                                        }
+                                    }
+                                }
+
                                 Row {
                                     anchors.verticalCenter: parent.verticalCenter
                                     spacing: 0
+                                    z: 2
 
                                     Repeater {
                                         model: Math.ceil((editorController ? editorController.patternLength : 4.0) * 2)
@@ -214,6 +550,123 @@ ApplicationWindow {
                                                 width: 1
                                                 height: 6
                                                 color: SaudadeTheme.lineNormal
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Draggable Loop Region Overlay
+                                Item {
+                                    id: loopRegion
+                                    visible: editorController ? editorController.loopEnabled : false
+                                    x: (editorController ? editorController.loopStartBeat : 0.0) * root.beatWidth
+                                    width: Math.max(8, ((editorController ? editorController.loopEndBeat : 16.0) - (editorController ? editorController.loopStartBeat : 0.0)) * root.beatWidth)
+                                    height: parent.height
+                                    z: 10
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        color: "#D6B49A"
+                                        opacity: 0.15
+                                    }
+
+                                    Rectangle {
+                                        anchors.top: parent.top
+                                        anchors.left: parent.left
+                                        anchors.right: parent.right
+                                        height: 3
+                                        color: "#D6B49A"
+                                    }
+
+                                    // Left handle (Start)
+                                    Rectangle {
+                                        id: loopLeftHandle
+                                        anchors.left: parent.left
+                                        anchors.top: parent.top
+                                        anchors.bottom: parent.bottom
+                                        width: 6
+                                        color: loopLeftMouse.containsMouse || loopLeftMouse.pressed ? "#F1EEE7" : "#D6B49A"
+
+                                        MouseArea {
+                                            id: loopLeftMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.SizeHorCursor
+
+                                            property real pressX: 0
+                                            property real initialStart: 0
+
+                                            onPressed: (mouse) => {
+                                                pressX = mouse.x;
+                                                initialStart = editorController.loopStartBeat;
+                                            }
+                                            onPositionChanged: (mouse) => {
+                                                if (pressed && editorController) {
+                                                    var dBeats = (mouse.x - pressX) / root.beatWidth;
+                                                    var newStart = Math.max(0.0, Math.min(editorController.loopEndBeat - 0.25, initialStart + dBeats));
+                                                    editorController.setLoopStartBeat(newStart);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Right handle (End)
+                                    Rectangle {
+                                        id: loopRightHandle
+                                        anchors.right: parent.right
+                                        anchors.top: parent.top
+                                        anchors.bottom: parent.bottom
+                                        width: 6
+                                        color: loopRightMouse.containsMouse || loopRightMouse.pressed ? "#F1EEE7" : "#D6B49A"
+
+                                        MouseArea {
+                                            id: loopRightMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.SizeHorCursor
+
+                                            property real pressX: 0
+                                            property real initialEnd: 0
+
+                                            onPressed: (mouse) => {
+                                                pressX = mouse.x;
+                                                initialEnd = editorController.loopEndBeat;
+                                            }
+                                            onPositionChanged: (mouse) => {
+                                                if (pressed && editorController) {
+                                                    var dBeats = (mouse.x - pressX) / root.beatWidth;
+                                                    var newEnd = Math.max(editorController.loopStartBeat + 0.25, initialEnd + dBeats);
+                                                    editorController.setLoopEndBeat(newEnd);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Drag middle body
+                                    MouseArea {
+                                        anchors.left: loopLeftHandle.right
+                                        anchors.right: loopRightHandle.left
+                                        anchors.top: parent.top
+                                        anchors.bottom: parent.bottom
+                                        hoverEnabled: true
+                                        cursorShape: Qt.SizeAllCursor
+
+                                        property real pressX: 0
+                                        property real initialStart: 0
+                                        property real initialEnd: 0
+
+                                        onPressed: (mouse) => {
+                                            pressX = mouse.x;
+                                            initialStart = editorController.loopStartBeat;
+                                            initialEnd = editorController.loopEndBeat;
+                                        }
+                                        onPositionChanged: (mouse) => {
+                                            if (pressed && editorController) {
+                                                var dBeats = (mouse.x - pressX) / root.beatWidth;
+                                                var len = initialEnd - initialStart;
+                                                var newStart = Math.max(0.0, initialStart + dBeats);
+                                                var newEnd = newStart + len;
+                                                editorController.setLoopRange(newStart, newEnd);
                                             }
                                         }
                                     }
@@ -260,6 +713,7 @@ ApplicationWindow {
                             y: -pianoRollFlickable.contentY
                             width: keysContainer.width
                             height: root.contentHeightCalc
+                            controller: editorController
                             rowHeight: root.rowHeight
                             minPitch: root.minPitch
                             maxPitch: root.maxPitch
@@ -323,12 +777,28 @@ ApplicationWindow {
                         contentWidth: Math.max(width, editorController.patternLength * root.beatWidth)
                         contentHeight: root.contentHeightCalc
 
+                        WheelHandler {
+                            acceptedModifiers: Qt.ControlModifier
+                            onWheel: function(event) {
+                                var cursorBeat = (pianoRollFlickable.contentX
+                                                  + event.position.x) / root.beatWidth
+                                var nextZoom = Math.max(0.35, Math.min(3.0,
+                                        root.currentZoom
+                                        * (event.angleDelta.y > 0 ? 1.12 : 0.89)))
+                                root.currentZoom = nextZoom
+                                pianoRollFlickable.contentX = Math.max(0,
+                                        cursorBeat * root.beatWidth - event.position.x)
+                                event.accepted = true
+                            }
+                        }
+
                         PianoRollItem {
                             id: pianoRoll
                             objectName: "pianoRoll"
                             width: pianoRollFlickable.contentWidth
                             height: root.contentHeightCalc
                             controller: editorController
+                            activeTool: toolRibbon.activeTool
                             rowHeight: root.rowHeight
                             beatWidth: root.beatWidth
                             minPitch: root.minPitch
@@ -366,6 +836,8 @@ ApplicationWindow {
                 onOpenPianoRollRequested: {
                     root.activeViewMode = "PIANO ROLL";
                 }
+                onImportMidiRequested: importMidiDialog.open()
+                onExportWavRequested: exportWavDialog.open()
             }
 
             // ==========================================

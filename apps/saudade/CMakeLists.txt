@@ -6,9 +6,13 @@ add_library(saudade_ui STATIC
     include/saudade/ui/editor_controller.hpp
     include/saudade/ui/piano_roll_item.hpp
     include/saudade/ui/piano_keys_item.hpp
+    include/saudade/ui/project_file.hpp
+    include/saudade/ui/project_exporter.hpp
     src/editor_controller.cpp
     src/piano_roll_item.cpp
     src/piano_keys_item.cpp
+    src/project_file.cpp
+    src/project_exporter.cpp
 )
 
 target_include_directories(saudade_ui

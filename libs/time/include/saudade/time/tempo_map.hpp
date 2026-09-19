@@ -14,6 +14,7 @@ public:
     explicit TempoMap(double bpm = kDefaultBpm) noexcept;
 
     [[nodiscard]] double bpm() const noexcept { return bpm_; }
+    void set_bpm(double bpm) noexcept { bpm_ = (bpm > 0.0) ? bpm : kDefaultBpm; }
 
     /// Converts a musical BeatPosition to a timeline SamplePosition for a given sample rate.
     [[nodiscard]] SamplePosition beat_to_sample(BeatPosition beat, double sample_rate) const noexcept;

@@ -18,6 +18,8 @@ struct NoteOn {
     NoteId note_id{0};
     double pitch{69.0};
     float velocity{1.0f};
+    float gain{1.0f};
+    float pan{0.0f};
 
     constexpr bool operator==(const NoteOn&) const noexcept = default;
 };

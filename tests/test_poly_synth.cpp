@@ -18,14 +18,17 @@ namespace {
 std::unique_ptr<renderplan::RenderPlan> make_synth_plan() {
     graph::GraphModel graph;
     const auto synth = graph.add_poly_synth_node();
-    const auto gain = graph.add_gain_node(-12.0f);
+    const auto gain_l = graph.add_gain_node(-12.0f);
+    const auto gain_r = graph.add_gain_node(-12.0f);
     const auto out = graph.add_output_node(2);
 
-    graph.connect(synth, graph::PolySynthNode::kPortOut,
-                  gain, graph::GainNode::kPortIn);
-    graph.connect(gain, graph::GainNode::kPortOut,
+    graph.connect(synth, graph::PolySynthNode::kPortLeft,
+                  gain_l, graph::GainNode::kPortIn);
+    graph.connect(synth, graph::PolySynthNode::kPortRight,
+                  gain_r, graph::GainNode::kPortIn);
+    graph.connect(gain_l, graph::GainNode::kPortOut,
                   out, graph::OutputNode::kPortLeft);
-    graph.connect(gain, graph::GainNode::kPortOut,
+    graph.connect(gain_r, graph::GainNode::kPortOut,
                   out, graph::OutputNode::kPortRight);
 
     return graph::GraphCompiler::compile(graph);
@@ -75,23 +78,26 @@ void test_f_deterministic_voice_stealing() {
 
     engine.play();
 
-    // Fill all 8 voices at sample 0 (NoteId 1..8)
-    for (size_t i = 1; i <= 8; ++i) {
+    constexpr size_t V = renderplan::PolySynthState::kVoiceCount;
+
+    // Fill all voices at sample 0 (NoteId 1..V)
+    for (size_t i = 1; i <= V; ++i) {
         assert(engine.schedule_note_on(0, i, 60.0 + static_cast<double>(i), 0.5f));
     }
 
-    // Now schedule 9th note at sample 30 (NoteId 9, pitch 80.0)
+    // Now schedule (V+1)th note at sample 30 (NoteId V+1, pitch 80.0)
     // Deterministic rule: NoteId 1 was oldest (allocated first), so it must be stolen!
-    assert(engine.schedule_note_on(30, 9, 80.0, 1.0f));
+    const events::NoteId stolen_id = V + 1;
+    assert(engine.schedule_note_on(30, stolen_id, 80.0, 1.0f));
 
     auto block = buffer.block(quantum);
     engine.process(block, ctx);
 
     // Now NoteOff for NoteId 1 at sample 60:
-    // Since NoteId 1 was already stolen, NoteOff(1) must NOT stop NoteId 9!
+    // Since NoteId 1 was already stolen, NoteOff(1) must NOT stop stolen_id!
     assert(engine.schedule_note_off(60, 1));
 
-    // Next quantum: NoteId 9 and Notes 2..8 are still playing
+    // Next quantum: stolen_id and Notes 2..V are still playing
     auto block2 = buffer.block(quantum);
     engine.process(block2, ctx);
 
@@ -102,19 +108,29 @@ void test_f_deterministic_voice_stealing() {
     }
     assert(sound_still_playing);
 
-    // Turn off NoteId 9 at sample 0 of block 3
-    assert(engine.schedule_note_off(256, 9));
-    // Turn off remaining 2..8
-    for (size_t i = 2; i <= 8; ++i) {
+    // Turn off stolen_id at sample 0 of block 3
+    assert(engine.schedule_note_off(256, stolen_id));
+    // Turn off remaining 2..V
+    for (size_t i = 2; i <= V; ++i) {
         assert(engine.schedule_note_off(256, i));
     }
 
+    // Block 3: notes have entered release phase and are decaying
     auto block3 = buffer.block(quantum);
     engine.process(block3, ctx);
 
-    const float* left3 = block3.channel(0);
+    // Process blocks until 120ms release phase finishes (~5760 samples)
+    for (int b = 0; b < 60; ++b) {
+        auto blk = buffer.block(quantum);
+        engine.process(blk, ctx);
+    }
+
+    // After release phase, all voices must be completely silent
+    auto block_silent = buffer.block(quantum);
+    engine.process(block_silent, ctx);
+    const float* left_silent = block_silent.channel(0);
     for (uint32_t i = 0; i < quantum; ++i) {
-        assert(left3[i] == 0.0f);
+        assert(left_silent[i] == 0.0f);
     }
 
     std::cout << "  [PASS] Deterministic oldest-voice stealing verified\n";
@@ -225,6 +241,50 @@ void test_j_tsan_concurrency() {
     std::cout << "  [PASS] Concurrent scheduling and RT execution passed with 0 data races\n";
 }
 
+void test_k_pan_master_gain_and_telemetry() {
+    std::cout << "[RUN] test_k_pan_master_gain_and_telemetry\n";
+
+    audio::AudioEngine engine(make_synth_plan());
+    audio::AudioBuffer buffer(2, 512);
+    audio::ProcessContext ctx{48000.0, 512};
+    const std::vector<events::TimelineEvent> left_events{
+        events::TimelineEvent{
+            0, events::NoteOn{9001, 60.0, 0.8f, 1.0f, -1.0f}},
+    };
+    engine.set_track_events(left_events);
+    engine.play();
+    auto block = buffer.block(512);
+    engine.process(block, ctx);
+
+    float peak_l = 0.0f;
+    float peak_r = 0.0f;
+    for (uint32_t i = 0; i < 512; ++i) {
+        peak_l = std::max(peak_l, std::abs(buffer.channel(0)[i]));
+        peak_r = std::max(peak_r, std::abs(buffer.channel(1)[i]));
+    }
+    assert(peak_l > 0.001f);
+    assert(peak_r < peak_l * 0.01f);
+
+    const auto telemetry = engine.telemetry();
+    assert(telemetry.sequence > 0);
+    assert(std::abs(telemetry.peak_left - peak_l) < 0.00001f);
+    assert(std::abs(telemetry.peak_right - peak_r) < 0.00001f);
+    assert(telemetry.rms_left >= 0.0f &&
+           telemetry.rms_left <= telemetry.peak_left);
+
+    audio::AudioEngine quieter(make_synth_plan());
+    quieter.set_master_gain_db(-6.0f);
+    quieter.set_track_events(left_events);
+    quieter.play();
+    auto quiet_block = buffer.block(512);
+    quieter.process(quiet_block, ctx);
+    const auto quiet_telemetry = quieter.telemetry();
+    assert(quiet_telemetry.peak_left < telemetry.peak_left * 0.52f);
+    assert(quiet_telemetry.peak_left > telemetry.peak_left * 0.48f);
+
+    std::cout << "  [PASS] Per-note pan, master gain, and bounded telemetry verified\n";
+}
+
 int main() {
     try {
         test_e_polyphony_8_voices();
@@ -232,6 +292,7 @@ int main() {
         test_h_transport_interaction();
         test_i_zero_rt_allocations();
         test_j_tsan_concurrency();
+        test_k_pan_master_gain_and_telemetry();
         std::cout << "All PolySynth tests PASSED!\n";
         return 0;
     } catch (const std::exception& ex) {

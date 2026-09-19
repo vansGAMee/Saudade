@@ -1,17 +1,13 @@
 import QtQuick
-import QtQuick.Controls
 import "../theme"
 
 Rectangle {
     id: footer
-
     property var controller: null
 
     height: SaudadeTheme.footerHeight
     color: SaudadeTheme.bgCanvas
-    border.width: 0
 
-    // Top border separator
     Rectangle {
         anchors.top: parent.top
         anchors.left: parent.left
@@ -20,59 +16,34 @@ Rectangle {
         color: SaudadeTheme.lineNormal
     }
 
-    Row {
+    Text {
         anchors.left: parent.left
         anchors.leftMargin: 12
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 8
-
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: "Saudade Engine v2.4.1-rt"
-            font.family: SaudadeTheme.fontMono
-            font.pixelSize: 9
-            color: SaudadeTheme.textMuted
+        width: parent.width * 0.55
+        elide: Text.ElideMiddle
+        text: {
+            if (!footer.controller) return "Untitled"
+            if (footer.controller.lastError.length > 0)
+                return footer.controller.lastError
+            var location = footer.controller.projectPath.length > 0
+                    ? footer.controller.projectPath : "Untitled project"
+            return footer.controller.projectDirty ? location + " — unsaved changes" : location
         }
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: "•"
-            font.pixelSize: 9
-            color: SaudadeTheme.textGhost
-        }
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: "ALSA/PipeWire Realtime (Priority 95)"
-            font.family: SaudadeTheme.fontMono
-            font.pixelSize: 9
-            color: SaudadeTheme.textSecondary
-        }
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: "•"
-            font.pixelSize: 9
-            color: SaudadeTheme.textGhost
-        }
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: "Buffer Underruns: 0"
-            font.family: SaudadeTheme.fontMono
-            font.pixelSize: 9
-            color: SaudadeTheme.accentSuccess
-        }
+        font.family: footer.controller && footer.controller.lastError.length > 0
+                     ? SaudadeTheme.fontSans : SaudadeTheme.fontMono
+        font.pixelSize: 9
+        color: footer.controller && footer.controller.lastError.length > 0
+               ? SaudadeTheme.accentWarning : SaudadeTheme.textMuted
     }
 
-    Row {
+    Text {
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 8
-
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: "C++23 • Zero-Allocation RT Core • Linux-First Architecture"
-            font.family: SaudadeTheme.fontSans
-            font.pixelSize: 9
-            color: SaudadeTheme.textMuted
-        }
+        text: "Space Play/Stop    Ctrl+S Save    Ctrl+I Import    Ctrl+E Export"
+        font.family: SaudadeTheme.fontSans
+        font.pixelSize: 9
+        color: SaudadeTheme.textMuted
     }
 }

@@ -28,7 +28,16 @@ struct OutputNode {
 };
 
 struct PolySynthNode {
+    float attack_seconds{0.008f};
+    float decay_seconds{0.20f};
+    float sustain{0.65f};
+    float release_seconds{0.12f};
+    float cutoff_hz{3200.0f};
+    float resonance{0.18f};
+    float character{0.78f};
     static constexpr const char* kPortOut = "out";
+    static constexpr const char* kPortLeft = "left";
+    static constexpr const char* kPortRight = "right";
 };
 
 using NodeData = std::variant<SineNode, GainNode, OutputNode, PolySynthNode>;

@@ -28,8 +28,16 @@ struct RouteStep {
 
 /// Parameters for a minimal polyphonic synthesizer execution step.
 struct PolySynthStep {
-    uint32_t output_buffer_slot{0};
+    uint32_t output_left_buffer_slot{0};
+    uint32_t output_right_buffer_slot{0};
     uint32_t state_index{0};
+    float attack_seconds{0.008f};
+    float decay_seconds{0.20f};
+    float sustain{0.65f};
+    float release_seconds{0.12f};
+    float cutoff_hz{3200.0f};
+    float resonance{0.18f};
+    float character{0.78f};
 };
 
 using ExecutionStep = std::variant<SineStep, GainStep, RouteStep, PolySynthStep>;

@@ -1,6 +1,7 @@
 #include <saudade/model/note.hpp>
 #include <saudade/model/note_sequence.hpp>
 #include <saudade/model/pattern.hpp>
+#include <saudade/model/project.hpp>
 
 #include <cassert>
 #include <cmath>
@@ -240,11 +241,50 @@ void test_pattern_and_multi_lane() {
     std::cout << "[PASS] test_pattern_and_multi_lane\n";
 }
 
+void test_project_arrangement_identity_and_cascade() {
+    std::cout << "[RUN] test_project_arrangement_identity_and_cascade\n";
+
+    model::Project project;
+    assert(project.name() == "Untitled");
+    assert(project.set_bpm(128.0));
+    assert(!project.set_bpm(12.0));
+    assert(project.bpm() == 128.0);
+
+    const auto track = project.add_track("Lead");
+    const auto pattern = project.add_pattern("Verse", time::BeatDuration::from_beats(16));
+    auto* p = project.find_pattern(pattern);
+    assert(p != nullptr);
+    const auto lane = p->add_lane("Notes");
+    assert(p->find_lane(lane)->notes().add_note(
+        time::BeatPosition::zero(), time::BeatDuration::from_beats(1), 60.0));
+
+    const auto clip_a = project.add_clip(
+        track, pattern, time::BeatPosition::zero(), time::BeatDuration::from_beats(16));
+    const auto clip_b = project.add_clip(
+        track, pattern, time::BeatPosition::from_beats(16), time::BeatDuration::from_beats(16));
+    assert(clip_a != 0 && clip_b != 0 && clip_a != clip_b);
+    assert(project.clips().size() == 2);
+    assert(project.end_beat() == time::BeatPosition::from_beats(32));
+    assert(project.find_clip(clip_b)->pattern_id == pattern);
+
+    project.find_track(track)->mixer.pan = -0.5f;
+    assert(project.find_track(track)->mixer.pan == -0.5f);
+
+    assert(project.remove_pattern(pattern));
+    assert(project.clips().empty());
+    assert(project.find_track(track) != nullptr);
+    assert(project.remove_track(track));
+    assert(project.tracks().empty());
+
+    std::cout << "[PASS] test_project_arrangement_identity_and_cascade\n";
+}
+
 int main() {
     test_note_invariants();
     test_note_identity_and_removal();
     test_sequence_operations_and_invariants();
     test_pattern_and_multi_lane();
+    test_project_arrangement_identity_and_cascade();
     std::cout << "ALL MODEL TESTS PASSED!\n";
     return 0;
 }

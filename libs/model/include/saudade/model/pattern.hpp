@@ -48,6 +48,7 @@ public:
 
     /// Adds a new lane with a stable unique LaneId.
     LaneId add_lane(std::string name = "");
+    bool add_lane(PatternLane lane);
 
     /// Removes a lane by its stable LaneId.
     bool remove_lane(LaneId id) noexcept;

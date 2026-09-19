@@ -66,12 +66,30 @@ void test_a_event_offset_accuracy() {
     }
     assert(has_active_signal);
 
-    // Verify samples [91, 128) are strictly silent
+    // Verify samples [91, 128) contain decaying release signal
+    bool has_release_signal = false;
     for (uint32_t i = 91; i < 128; ++i) {
-        assert(left[i] == 0.0f);
+        if (std::abs(left[i]) > 1e-6f) {
+            has_release_signal = true;
+        }
+    }
+    assert(has_release_signal);
+
+    // Process until 120ms release phase completes (~5760 samples)
+    for (int b = 0; b < 60; ++b) {
+        auto blk = buffer.block(quantum);
+        engine.process(blk, ctx);
     }
 
-    std::cout << "  [PASS] Offset accuracy: [0, 37) silent, [37, 91) active, [91, 128) silent\n";
+    // Verify completely silent after release
+    auto block_silent = buffer.block(quantum);
+    engine.process(block_silent, ctx);
+    const float* left_silent = block_silent.channel(0);
+    for (uint32_t i = 0; i < quantum; ++i) {
+        assert(left_silent[i] == 0.0f);
+    }
+
+    std::cout << "  [PASS] Offset accuracy: [0, 37) silent, [37, 91) active, release decay and eventual silence verified\n";
 }
 
 void test_b_quantum_boundaries() {

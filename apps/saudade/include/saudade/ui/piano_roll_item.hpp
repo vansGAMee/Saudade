@@ -14,6 +14,7 @@ class PianoRollItem : public QQuickItem {
     Q_OBJECT
 
     Q_PROPERTY(saudade::ui::EditorController* controller READ controller WRITE setController NOTIFY controllerChanged)
+    Q_PROPERTY(QString activeTool READ activeTool WRITE setActiveTool NOTIFY activeToolChanged)
     Q_PROPERTY(float beatWidth READ beatWidth WRITE setBeatWidth NOTIFY beatWidthChanged)
     Q_PROPERTY(float rowHeight READ rowHeight WRITE setRowHeight NOTIFY rowHeightChanged)
     Q_PROPERTY(int minPitch READ minPitch WRITE setMinPitch NOTIFY pitchRangeChanged)
@@ -25,6 +26,9 @@ public:
 
     [[nodiscard]] EditorController* controller() const noexcept { return controller_; }
     void setController(EditorController* controller);
+
+    [[nodiscard]] const QString& activeTool() const noexcept { return active_tool_; }
+    void setActiveTool(const QString& tool);
 
     [[nodiscard]] float beatWidth() const noexcept { return beat_width_; }
     void setBeatWidth(float w);
@@ -40,6 +44,7 @@ public:
 
 signals:
     void controllerChanged();
+    void activeToolChanged();
     void beatWidthChanged();
     void rowHeightChanged();
     void pitchRangeChanged();
@@ -52,27 +57,40 @@ protected:
     void mouseReleaseEvent(QMouseEvent* event) override;
     void hoverMoveEvent(QHoverEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void keyReleaseEvent(QKeyEvent* event) override;
 
 private:
     enum class DragMode {
         None,
         Create,
         Move,
-        Resize
+        ResizeStart,
+        ResizeEnd,
+        Erase,
+        Marquee
     };
 
     struct HitResult {
         bool hit{false};
-        bool is_resize_handle{false};
+        bool is_start_resize_handle{false};
+        bool is_end_resize_handle{false};
         uint64_t note_id{0};
         double pitch{0.0};
         time::BeatPosition start{0};
         time::BeatDuration duration{0};
     };
 
+    struct InitialNoteState {
+        uint64_t note_id{0};
+        time::BeatPosition start{0};
+        double pitch{0.0};
+        time::BeatDuration duration{0};
+    };
+
     [[nodiscard]] HitResult hitTest(float x, float y) const noexcept;
 
     EditorController* controller_{nullptr};
+    QString active_tool_{"pencil"};
     float beat_width_{Coordinates::kDefaultBeatWidth};
     float row_height_{Coordinates::kDefaultRowHeight};
     int min_pitch_{Coordinates::kDefaultMinPitch};
@@ -84,6 +102,12 @@ private:
     time::BeatPosition initial_note_start_{0};
     double initial_note_pitch_{60.0};
     time::BeatDuration initial_note_duration_{0};
+
+    std::vector<InitialNoteState> initial_selected_states_{};
+    QRectF marquee_rect_{};
+    bool is_marquee_active_{false};
+    double last_audition_pitch_{-1.0};
+    bool temporary_erase_{false};
 };
 
 } // namespace saudade::ui

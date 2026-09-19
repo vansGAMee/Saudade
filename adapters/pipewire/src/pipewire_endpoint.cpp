@@ -46,6 +46,7 @@ struct RegistryContext {
     struct pw_metadata* metadata{nullptr};
     struct spa_hook metadata_listener{};
     std::set<std::pair<uint32_t, uint32_t>> linked_pairs;
+    std::vector<struct pw_proxy*> link_proxies;
 
     void try_link() {
         const uint32_t our_node_id = pw_filter_get_node_id(filter);
@@ -96,7 +97,13 @@ struct RegistryContext {
                         PW_KEY_OBJECT_LINGER, "false",
                         nullptr
                     );
-                    pw_core_create_object(core, "link-factory", PW_TYPE_INTERFACE_Link, PW_VERSION_LINK, &props_l->dict, 0);
+                    if (auto* proxy = static_cast<struct pw_proxy*>(
+                            pw_core_create_object(
+                                core, "link-factory", PW_TYPE_INTERFACE_Link,
+                                PW_VERSION_LINK, &props_l->dict, 0))) {
+                        link_proxies.push_back(proxy);
+                    }
+                    pw_properties_free(props_l);
                 }
 
                 if (!linked_pairs.contains({our_fr, sink_fr})) {
@@ -107,7 +114,13 @@ struct RegistryContext {
                         PW_KEY_OBJECT_LINGER, "false",
                         nullptr
                     );
-                    pw_core_create_object(core, "link-factory", PW_TYPE_INTERFACE_Link, PW_VERSION_LINK, &props_r->dict, 0);
+                    if (auto* proxy = static_cast<struct pw_proxy*>(
+                            pw_core_create_object(
+                                core, "link-factory", PW_TYPE_INTERFACE_Link,
+                                PW_VERSION_LINK, &props_r->dict, 0))) {
+                        link_proxies.push_back(proxy);
+                    }
+                    pw_properties_free(props_r);
                 }
             }
         }
@@ -263,8 +276,9 @@ void PipeWireEndpoint::start() {
 }
 
 void PipeWireEndpoint::loop_thread_fn() {
-    loop_ = pw_main_loop_new(nullptr);
-    if (!loop_) {
+    auto* loop = pw_main_loop_new(nullptr);
+    loop_.store(loop, std::memory_order_release);
+    if (!loop) {
         running_.store(false, std::memory_order_release);
         return;
     }
@@ -293,7 +307,7 @@ void PipeWireEndpoint::loop_thread_fn() {
     };
 
     filter_ = pw_filter_new_simple(
-        pw_main_loop_get_loop(loop_),
+        pw_main_loop_get_loop(loop),
         app_name_.c_str(),
         props,
         &filter_events,
@@ -301,8 +315,8 @@ void PipeWireEndpoint::loop_thread_fn() {
     );
 
     if (!filter_) {
-        pw_main_loop_destroy(loop_);
-        loop_ = nullptr;
+        pw_main_loop_destroy(loop);
+        loop_.store(nullptr, std::memory_order_release);
         running_.store(false, std::memory_order_release);
         return;
     }
@@ -338,9 +352,9 @@ void PipeWireEndpoint::loop_thread_fn() {
     int res = pw_filter_connect(filter_, PW_FILTER_FLAG_RT_PROCESS, nullptr, 0);
     if (res < 0) {
         pw_filter_destroy(filter_);
-        pw_main_loop_destroy(loop_);
+        pw_main_loop_destroy(loop);
         filter_ = nullptr;
-        loop_ = nullptr;
+        loop_.store(nullptr, std::memory_order_release);
         running_.store(false, std::memory_order_release);
         return;
     }
@@ -359,7 +373,7 @@ void PipeWireEndpoint::loop_thread_fn() {
     pw_registry_add_listener(registry, &registry_listener, &registry_events, &reg_ctx);
 
     // Run the main loop until stop() is called
-    pw_main_loop_run(loop_);
+    pw_main_loop_run(loop);
 
     // Teardown
     reg_ctx_ = nullptr;
@@ -367,21 +381,23 @@ void PipeWireEndpoint::loop_thread_fn() {
         spa_hook_remove(&reg_ctx.metadata_listener);
         pw_proxy_destroy(reinterpret_cast<struct pw_proxy*>(reg_ctx.metadata));
     }
+    for (auto* proxy : reg_ctx.link_proxies) {
+        pw_proxy_destroy(proxy);
+    }
+    reg_ctx.link_proxies.clear();
     spa_hook_remove(&registry_listener);
     pw_proxy_destroy(reinterpret_cast<struct pw_proxy*>(registry));
 
     pw_filter_destroy(filter_);
-    pw_main_loop_destroy(loop_);
+    pw_main_loop_destroy(loop);
     filter_ = nullptr;
-    loop_ = nullptr;
+    loop_.store(nullptr, std::memory_order_release);
 }
 
 void PipeWireEndpoint::stop() {
-    if (!running_.exchange(false, std::memory_order_acq_rel)) {
-        return;
-    }
-    if (loop_) {
-        pw_main_loop_quit(loop_);
+    running_.store(false, std::memory_order_release);
+    if (auto* loop = loop_.load(std::memory_order_acquire)) {
+        pw_main_loop_quit(loop);
     }
     if (loop_thread_.joinable()) {
         loop_thread_.join();

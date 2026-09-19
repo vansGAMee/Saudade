@@ -10,8 +10,12 @@ NodeId GraphModel::add_sine_node(float frequency) {
 }
 
 NodeId GraphModel::add_poly_synth_node() {
+    return add_poly_synth_node(PolySynthNode{});
+}
+
+NodeId GraphModel::add_poly_synth_node(const PolySynthNode& patch) {
     const NodeId id = next_id_++;
-    nodes_[id] = NodeRecord{id, PolySynthNode{}};
+    nodes_[id] = NodeRecord{id, patch};
     return id;
 }
 

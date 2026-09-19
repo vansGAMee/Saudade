@@ -7,11 +7,9 @@ Rectangle {
     id: transportBar
 
     property var controller: null
+    property string activeView: "PIANO ROLL"
     property bool loopEnabled: true
     property bool recordArmed: false
-
-    signal searchTriggered()
-    signal settingsTriggered()
 
     height: SaudadeTheme.topBarHeight
     color: SaudadeTheme.bgCanvas
@@ -54,7 +52,13 @@ Rectangle {
         // Project Name
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: "Vektor_Overdrive.sd"
+            text: {
+                if (!transportBar.controller
+                        || transportBar.controller.projectPath.length === 0)
+                    return "Untitled"
+                var pieces = transportBar.controller.projectPath.split("/")
+                return pieces[pieces.length - 1]
+            }
             font.family: SaudadeTheme.fontSans
             font.pixelSize: SaudadeTheme.textSmall
             color: SaudadeTheme.textSecondary
@@ -72,6 +76,14 @@ Rectangle {
                 width: 24
                 height: 24
                 iconSize: 12
+                onClicked: {
+                    if (transportBar.controller) {
+                        if (transportBar.activeView === "ARRANGEMENT")
+                            transportBar.controller.arrangementUndo()
+                        else
+                            transportBar.controller.undo()
+                    }
+                }
             }
             SaudadeIconButton {
                 iconName: "redo"
@@ -80,6 +92,14 @@ Rectangle {
                 width: 24
                 height: 24
                 iconSize: 12
+                onClicked: {
+                    if (transportBar.controller) {
+                        if (transportBar.activeView === "ARRANGEMENT")
+                            transportBar.controller.arrangementRedo()
+                        else
+                            transportBar.controller.redo()
+                    }
+                }
             }
         }
     }
@@ -167,14 +187,34 @@ Rectangle {
                 // Loop
                 SaudadeIconButton {
                     iconName: "loop"
-                    variant: transportBar.loopEnabled ? "secondary" : "subtle"
+                    variant: (transportBar.controller && transportBar.controller.loopEnabled) ? "primary" : "subtle"
                     checkable: true
-                    checked: transportBar.loopEnabled
+                    checked: (transportBar.controller && transportBar.controller.loopEnabled)
+                    tooltipText: "Toggle Loop (L)"
                     width: 26
                     height: 26
                     iconSize: 12
                     onClicked: {
-                        transportBar.loopEnabled = !transportBar.loopEnabled;
+                        if (transportBar.controller) {
+                            transportBar.controller.setLoopEnabled(!transportBar.controller.loopEnabled);
+                        }
+                    }
+                }
+
+                // Metronome
+                SaudadeIconButton {
+                    iconName: "metronome"
+                    variant: (transportBar.controller && transportBar.controller.metronomeEnabled) ? "primary" : "subtle"
+                    checkable: true
+                    checked: (transportBar.controller && transportBar.controller.metronomeEnabled)
+                    tooltipText: "Toggle Metronome (C)"
+                    width: 26
+                    height: 26
+                    iconSize: 12
+                    onClicked: {
+                        if (transportBar.controller) {
+                            transportBar.controller.setMetronomeEnabled(!transportBar.controller.metronomeEnabled);
+                        }
                     }
                 }
             }
@@ -280,12 +320,21 @@ Rectangle {
                         font.weight: Font.Medium
                         color: SaudadeTheme.textMuted
                     }
-                    Text {
-                        text: parent.parent.parent.bpmVal.toFixed(2)
+                    TextInput {
+                        id: tempoInput
+                        width: 48
+                        text: parent.parent.parent.bpmVal.toFixed(1)
                         font.family: SaudadeTheme.fontMono
                         font.pixelSize: 12
                         font.weight: Font.DemiBold
                         color: SaudadeTheme.textPrimary
+                        selectByMouse: true
+                        onEditingFinished: {
+                            var val = parseFloat(text);
+                            if (!isNaN(val) && transportBar.controller) {
+                                transportBar.controller.setBpm(val);
+                            }
+                        }
                     }
                 }
 
@@ -319,125 +368,62 @@ Rectangle {
         }
     }
 
-    // Right Engine Status & Global Utilities
+    // Right master output summary. Values come from bounded engine telemetry.
     Row {
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
-        spacing: 10
+        spacing: 8
 
-        // PipeWire Endpoint Status Inset
         Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             height: 30
-            width: engineStatusRow.width + 12
+            width: 98
             radius: SaudadeTheme.radiusMd
             color: SaudadeTheme.bgWorkspace
             border.width: 1
             border.color: SaudadeTheme.lineSoft
 
             Row {
-                id: engineStatusRow
                 anchors.centerIn: parent
-                spacing: 8
-
+                spacing: 6
                 Column {
                     anchors.verticalCenter: parent.verticalCenter
                     Text {
-                        text: "PIPEWIRE 48k"
+                        text: "MASTER"
                         font.family: SaudadeTheme.fontMono
                         font.pixelSize: 8
                         color: SaudadeTheme.textMuted
                     }
                     Text {
-                        text: "1.3 ms"
+                        text: transportBar.controller
+                              ? Number(transportBar.controller.masterGainDb).toFixed(1) + " dB"
+                              : "0.0 dB"
                         font.family: SaudadeTheme.fontMono
-                        font.pixelSize: 11
+                        font.pixelSize: 10
                         font.weight: Font.DemiBold
                         color: SaudadeTheme.textPrimary
                     }
                 }
-
-                Rectangle {
+                Row {
                     anchors.verticalCenter: parent.verticalCenter
-                    width: 1
-                    height: 14
-                    color: SaudadeTheme.lineSoft
-                }
-
-                Column {
-                    anchors.verticalCenter: parent.verticalCenter
-                    Text {
-                        text: "DSP LOAD"
-                        font.family: SaudadeTheme.fontMono
-                        font.pixelSize: 8
-                        color: SaudadeTheme.textMuted
+                    spacing: 3
+                    SaudadeMeter {
+                        meterHeight: 20
+                        meterWidth: 4
+                        level: transportBar.controller
+                               ? transportBar.controller.meterLeft : 0
+                        peak: level
                     }
-                    Text {
-                        text: (transportBar.controller && transportBar.controller.isPlaying) ? "1.2%" : "0.3%"
-                        font.family: SaudadeTheme.fontMono
-                        font.pixelSize: 11
-                        font.weight: Font.DemiBold
-                        color: SaudadeTheme.accentSuccess
+                    SaudadeMeter {
+                        meterHeight: 20
+                        meterWidth: 4
+                        level: transportBar.controller
+                               ? transportBar.controller.meterRight : 0
+                        peak: level
                     }
                 }
             }
-        }
-
-        // Search Pill
-        Rectangle {
-            anchors.verticalCenter: parent.verticalCenter
-            height: 28
-            width: 100
-            radius: SaudadeTheme.radiusMd
-            color: SaudadeTheme.bgControl
-            border.width: 1
-            border.color: SaudadeTheme.lineSoft
-
-            Row {
-                anchors.centerIn: parent
-                spacing: 6
-
-                Text {
-                    text: "Search"
-                    font.family: SaudadeTheme.fontSans
-                    font.pixelSize: SaudadeTheme.textSmall
-                    color: SaudadeTheme.textSecondary
-                }
-
-                Rectangle {
-                    width: 38
-                    height: 16
-                    radius: 2
-                    color: SaudadeTheme.bgWorkspace
-                    border.width: 1
-                    border.color: SaudadeTheme.lineSoft
-
-                    Text {
-                        anchors.centerIn: parent
-                        text: "Ctrl+K"
-                        font.family: SaudadeTheme.fontMono
-                        font.pixelSize: 9
-                        color: SaudadeTheme.textMuted
-                    }
-                }
-            }
-
-            MouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: transportBar.searchTriggered()
-            }
-        }
-
-        // Settings / Workspace Action
-        SaudadeIconButton {
-            iconName: "settings"
-            variant: "subtle"
-            width: 28
-            height: 28
-            iconSize: 14
-            onClicked: transportBar.settingsTriggered()
         }
     }
 }

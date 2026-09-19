@@ -222,14 +222,82 @@ void test_g_h_repeated_playback_and_rt_safe_flush() {
     controller.play();
     assert(controller.isPlaying());
 
-    // Verify scheduled events in engine queue correspond to new G4 note only
-    events::TimelineEvent ev{};
-    assert(engine.event_queue().peek(ev));
-    assert(std::holds_alternative<events::NoteOn>(ev.payload));
-    assert(std::get<events::NoteOn>(ev.payload).note_id == 2);
-    assert(std::get<events::NoteOn>(ev.payload).pitch == 67.0);
+    // Verify scheduled events in engine track buffer correspond to new G4 note only
+    const auto& track = engine.active_track();
+    assert(track.count == 2);
+    assert(std::holds_alternative<events::NoteOn>(track.events[0].payload));
+    assert(std::get<events::NoteOn>(track.events[0].payload).note_id == 2);
+    assert(std::get<events::NoteOn>(track.events[0].payload).pitch == 67.0);
 
     std::cout << "[PASS] test_g_h_repeated_playback_and_rt_safe_flush\n";
+}
+
+void test_i_arrangement_and_mixer_commands() {
+    std::cout << "[RUN] test_i_arrangement_and_mixer_commands\n";
+
+    audio::AudioEngine engine(make_test_synth_plan());
+    ui::EditorController controller(engine, 48000.0);
+    const auto first_track =
+        controller.tracksData().front().toMap().value("id").toULongLong();
+    const auto first_clip =
+        controller.clipsData().front().toMap().value("id").toULongLong();
+
+    assert(controller.addNote(0.0, 1.0, 60.0, 0.8f) != 0);
+    assert(controller.setTrackGain(first_track, -6.0f));
+    assert(controller.setTrackPan(first_track, -0.75f));
+    const auto& compiled = engine.active_track();
+    assert(compiled.count == 2);
+    const auto& note_on = std::get<events::NoteOn>(compiled.events[0].payload);
+    assert(std::abs(note_on.gain - std::pow(10.0f, -6.0f / 20.0f)) < 0.0001f);
+    assert(note_on.pan == -0.75f);
+
+    const auto duplicate = controller.duplicateClip(first_clip);
+    assert(duplicate != 0);
+    assert(controller.clipsData().size() == 2);
+    controller.arrangementUndo();
+    assert(controller.clipsData().size() == 1);
+    controller.arrangementRedo();
+    assert(controller.clipsData().size() == 2);
+
+    assert(controller.moveClip(duplicate, 8.0, first_track));
+    assert(controller.project().find_clip(duplicate)->start ==
+           time::BeatPosition::from_beats(8));
+    controller.arrangementUndo();
+    assert(controller.project().find_clip(duplicate)->start ==
+           time::BeatPosition::from_beats(16));
+    controller.arrangementRedo();
+
+    assert(controller.resizeClip(duplicate, 8.0));
+    assert(controller.project().find_clip(duplicate)->duration ==
+           time::BeatDuration::from_beats(8));
+    controller.arrangementUndo();
+    assert(controller.project().find_clip(duplicate)->duration ==
+           time::BeatDuration::from_beats(16));
+
+    assert(controller.deleteClip(duplicate));
+    assert(controller.clipsData().size() == 1);
+    controller.arrangementUndo();
+    assert(controller.clipsData().size() == 2);
+
+    const auto second_track = controller.addTrack("Second");
+    assert(controller.tracksData().size() == 2);
+    const auto second_clip = controller.createPattern(second_track, 32.0, 8.0);
+    assert(second_clip != 0);
+    assert(controller.clipsData().size() == 3);
+    controller.arrangementUndo();
+    assert(controller.project().find_clip(second_clip) == nullptr);
+    controller.arrangementRedo();
+    assert(controller.project().find_clip(second_clip) != nullptr);
+
+    assert(controller.setTrackMute(first_track, true));
+    assert(engine.active_track().count == 0);
+    assert(controller.setTrackMute(first_track, false));
+    assert(controller.setTrackSolo(second_track, true));
+    assert(engine.active_track().count == 0);
+    assert(controller.setTrackSolo(second_track, false));
+    assert(engine.active_track().count > 0);
+
+    std::cout << "[PASS] arrangement semantic undo and real mixer event state\n";
 }
 
 void test_i_qt_gui_smoke_test() {
@@ -241,7 +309,7 @@ void test_i_qt_gui_smoke_test() {
     audio::AudioEngine engine(make_test_synth_plan());
     ui::EditorController controller(engine, 48000.0);
 
-    assert(controller.patternLength() == 4.0);
+    assert(controller.patternLength() == 16.0);
     assert(controller.bpm() == 120.0);
     assert(!controller.isPlaying());
 
@@ -330,6 +398,13 @@ void test_j_mouse_pointer_integration() {
     assert(moved_note != nullptr);
     assert(moved_note->start == time::BeatPosition::from_fraction(3, 2)); // 1.5 beats
     assert(moved_note->pitch == 61.0); // C#4
+    controller.undo();
+    assert(controller.active_sequence()->find_note(note_id)->start ==
+           time::BeatPosition::from_fraction(1, 2));
+    assert(controller.active_sequence()->find_note(note_id)->pitch == 60.0);
+    controller.redo();
+    assert(controller.active_sequence()->find_note(note_id)->start ==
+           time::BeatPosition::from_fraction(3, 2));
 
     // 3. Test Resize: Drag right edge
     // Note is now at x=270..315, y=460..480. Resize handle is x in [307..315]. Click at (312, 470).
@@ -346,13 +421,39 @@ void test_j_mouse_pointer_integration() {
     const auto* resized_note = controller.active_sequence()->find_note(note_id);
     assert(resized_note != nullptr);
     assert(resized_note->duration == time::BeatDuration::from_fraction(1, 2)); // 0.5 beats
+    controller.undo();
+    assert(controller.active_sequence()->find_note(note_id)->duration ==
+           time::BeatDuration::from_fraction(1, 4));
+    controller.redo();
+    assert(controller.active_sequence()->find_note(note_id)->duration ==
+           time::BeatDuration::from_fraction(1, 2));
 
-    // 4. Test Right Click Delete: Click on note body with RightButton
+    // 4. Hold-E temporary eraser deletes without changing the selected tool.
     const QPoint delete_win(static_cast<int>(std::round(piano_roll->mapToScene(QPointF(280.0, 470.0)).x())),
                             static_cast<int>(std::round(piano_roll->mapToScene(QPointF(280.0, 470.0)).y())));
+    QTest::keyPress(window, Qt::Key_E);
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, delete_win);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, delete_win);
+    QTest::keyRelease(window, Qt::Key_E);
+    assert(controller.active_sequence()->empty());
+
+    // Recreate and retain right-click deletion as a secondary convenience.
+    QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, window_pos);
+    QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, window_pos);
+    assert(controller.active_sequence()->size() == 1);
     QTest::mousePress(window, Qt::RightButton, Qt::NoModifier, delete_win);
     QTest::mouseRelease(window, Qt::RightButton, Qt::NoModifier, delete_win);
-
+    if (!controller.active_sequence()->empty()) {
+        const QPoint recreated_delete(
+            static_cast<int>(std::round(
+                piano_roll->mapToScene(QPointF(100.0, 490.0)).x())),
+            static_cast<int>(std::round(
+                piano_roll->mapToScene(QPointF(100.0, 490.0)).y())));
+        QTest::mousePress(window, Qt::RightButton, Qt::NoModifier,
+                          recreated_delete);
+        QTest::mouseRelease(window, Qt::RightButton, Qt::NoModifier,
+                            recreated_delete);
+    }
     assert(controller.active_sequence()->empty());
 
     // 5. Test Playback after mouse creation
@@ -385,6 +486,7 @@ int main(int argc, char* argv[]) {
     test_b_c_d_e_note_crud_operations();
     test_f_playback_preparation();
     test_g_h_repeated_playback_and_rt_safe_flush();
+    test_i_arrangement_and_mixer_commands();
     test_i_qt_gui_smoke_test();
     test_j_mouse_pointer_integration();
 

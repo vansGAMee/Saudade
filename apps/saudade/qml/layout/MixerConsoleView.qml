@@ -3,245 +3,184 @@ import QtQuick.Controls
 import "../theme"
 import "../components"
 
-Rectangle {
+Item {
     id: mixerView
-
     property var controller: null
 
-    color: SaudadeTheme.bgWorkspace
+    Rectangle { anchors.fill: parent; color: SaudadeTheme.bgWorkspace }
 
     Flickable {
         anchors.fill: parent
         anchors.margins: 12
-        contentWidth: channelsRow.implicitWidth + 24
+        contentWidth: strips.width
         contentHeight: height
-        boundsBehavior: Flickable.StopAtBounds
         clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
 
         Row {
-            id: channelsRow
+            id: strips
+            height: parent.height
             spacing: 8
-            height: parent.height - 24
 
-            // Channel 1: Kick
-            ChannelStrip {
-                channelNumber: "01"
-                channelName: "Kick & Sub"
-                faderVal: 0.82
-                meterVal: (mixerView.controller && mixerView.controller.isPlaying) ? 0.72 : 0.0
+            Repeater {
+                model: mixerView.controller ? mixerView.controller.tracksData : []
+                delegate: Rectangle {
+                    required property var modelData
+                    width: 104
+                    height: strips.height
+                    radius: SaudadeTheme.radiusMd
+                    color: modelData.selected ? SaudadeTheme.bgPanelRaised
+                                              : SaudadeTheme.bgPanel
+                    border.width: 1
+                    border.color: modelData.selected ? SaudadeTheme.lineFocus
+                                                     : SaudadeTheme.lineNormal
+
+                    Column {
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 8
+
+                        Text {
+                            width: parent.width
+                            text: modelData.name
+                            elide: Text.ElideRight
+                            horizontalAlignment: Text.AlignHCenter
+                            font.family: SaudadeTheme.fontSans
+                            font.pixelSize: 11
+                            font.weight: Font.DemiBold
+                            color: SaudadeTheme.textPrimary
+                        }
+
+                        SaudadeKnob {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            label: "Pan"
+                            knobSize: 34
+                            value: (modelData.pan + 1.0) * 0.5
+                            defaultValue: 0.5
+                            displayText: Math.abs(modelData.pan) < 0.01
+                                         ? "C"
+                                         : (modelData.pan < 0
+                                            ? Math.round(-modelData.pan * 100) + "L"
+                                            : Math.round(modelData.pan * 100) + "R")
+                            onValueModified: function(newValue) {
+                                mixerView.controller.setTrackPan(
+                                            modelData.id, newValue * 2.0 - 1.0)
+                            }
+                        }
+
+                        Row {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            height: Math.max(80, parent.height - 190)
+                            spacing: 8
+
+                            SaudadeSlider {
+                                orientation: "vertical"
+                                trackLength: parent.height
+                                value: (Math.max(-60, Math.min(12, modelData.gainDb)) + 60) / 72
+                                onValueModified: function(newValue) {
+                                    mixerView.controller.setTrackGain(
+                                                modelData.id, newValue * 72 - 60)
+                                }
+                            }
+                        }
+
+                        Text {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: Number(modelData.gainDb).toFixed(1) + " dB"
+                            font.family: SaudadeTheme.fontMono
+                            font.pixelSize: 9
+                            color: SaudadeTheme.textSecondary
+                        }
+
+                        Row {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            spacing: 5
+                            SaudadeButton {
+                                text: "M"
+                                compact: true
+                                checkable: true
+                                checked: modelData.muted
+                                tooltipText: "Mute track"
+                                onClicked: mixerView.controller.setTrackMute(
+                                               modelData.id, checked)
+                            }
+                            SaudadeButton {
+                                text: "S"
+                                compact: true
+                                checkable: true
+                                checked: modelData.solo
+                                tooltipText: "Solo track"
+                                onClicked: mixerView.controller.setTrackSolo(
+                                               modelData.id, checked)
+                            }
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        z: -1
+                        onClicked: mixerView.controller.selectTrack(modelData.id)
+                    }
+                }
             }
 
-            // Channel 2: PolySynth (Linked to synth!)
-            ChannelStrip {
-                channelNumber: "02"
-                channelName: "PolySynth"
-                isMidi: true
-                selected: true
-                faderVal: 0.85
-                meterVal: (mixerView.controller && mixerView.controller.isPlaying) ? 0.78 : 0.0
-            }
-
-            // Channel 3: Atmosphere
-            ChannelStrip {
-                channelNumber: "03"
-                channelName: "Atmosphere"
-                faderVal: 0.65
-                meterVal: (mixerView.controller && mixerView.controller.isPlaying) ? 0.45 : 0.0
-            }
-
-            // Channel 4: Glitch Perc
-            ChannelStrip {
-                channelNumber: "04"
-                channelName: "Glitch Perc"
-                faderVal: 0.70
-                meterVal: (mixerView.controller && mixerView.controller.isPlaying) ? 0.55 : 0.0
-            }
-
-            // Channel 5: Lead Vocal
-            ChannelStrip {
-                channelNumber: "05"
-                channelName: "Lead Vocal"
-                faderVal: 0.75
-                meterVal: (mixerView.controller && mixerView.controller.isPlaying) ? 0.60 : 0.0
-            }
-
-            // Master Bus Channel Strip
             Rectangle {
-                width: 100
-                height: parent.height
+                width: 132
+                height: strips.height
                 radius: SaudadeTheme.radiusMd
-                color: SaudadeTheme.bgPanelRaised
-                border.width: 1.5
+                color: SaudadeTheme.bgCanvas
+                border.width: 1
                 border.color: SaudadeTheme.lineFocus
 
                 Column {
                     anchors.fill: parent
-                    anchors.margins: 8
-                    spacing: 8
+                    anchors.margins: 10
+                    spacing: 10
 
                     Text {
+                        anchors.horizontalCenter: parent.horizontalCenter
                         text: "MASTER"
-                        font.family: SaudadeTheme.fontMono
+                        font.family: SaudadeTheme.fontSans
                         font.pixelSize: 11
                         font.weight: Font.DemiBold
                         color: SaudadeTheme.textPrimary
                     }
 
-                    Rectangle { width: parent.width; height: 1; color: SaudadeTheme.lineSoft }
-
-                    SaudadeKnob {
-                        label: "PAN"
-                        value: 0.5
-                        displayText: "C"
-                        knobSize: 32
-                        anchors.horizontalCenter: parent.horizontalCenter
-                    }
-
                     Row {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        spacing: 8
-                        height: parent.height - 130
-
+                        height: Math.max(100, parent.height - 100)
+                        spacing: 12
                         SaudadeMeter {
                             meterHeight: parent.height
-                            level: (mixerView.controller && mixerView.controller.isPlaying) ? 0.82 : 0.0
-                            peak: (mixerView.controller && mixerView.controller.isPlaying) ? 0.86 : 0.0
+                            level: mixerView.controller ? mixerView.controller.meterLeft : 0
+                            peak: level
                         }
-
                         SaudadeSlider {
                             orientation: "vertical"
                             trackLength: parent.height
-                            value: 0.85
+                            value: mixerView.controller
+                                   ? (mixerView.controller.masterGainDb + 60) / 72 : 0.833
+                            onValueModified: function(newValue) {
+                                mixerView.controller.setMasterGainDb(newValue * 72 - 60)
+                            }
                         }
-
                         SaudadeMeter {
                             meterHeight: parent.height
-                            level: (mixerView.controller && mixerView.controller.isPlaying) ? 0.82 : 0.0
-                            peak: (mixerView.controller && mixerView.controller.isPlaying) ? 0.86 : 0.0
+                            level: mixerView.controller ? mixerView.controller.meterRight : 0
+                            peak: level
                         }
                     }
 
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
-                        text: "0.0 dB"
+                        text: mixerView.controller
+                              ? Number(mixerView.controller.masterGainDb).toFixed(1) + " dB"
+                              : "0.0 dB"
                         font.family: SaudadeTheme.fontMono
                         font.pixelSize: 10
-                        font.weight: Font.DemiBold
                         color: SaudadeTheme.textPrimary
                     }
-                }
-            }
-        }
-    }
-
-    component ChannelStrip: Rectangle {
-        property string channelNumber: "01"
-        property string channelName: "Channel"
-        property bool isMidi: false
-        property bool selected: false
-        property real faderVal: 0.75
-        property real meterVal: 0.0
-
-        width: 88
-        height: parent.height
-        radius: SaudadeTheme.radiusMd
-        color: selected ? SaudadeTheme.bgPanelRaised : SaudadeTheme.bgPanel
-        border.width: 1
-        border.color: selected ? SaudadeTheme.lineFocus : SaudadeTheme.lineNormal
-
-        Column {
-            anchors.fill: parent
-            anchors.margins: 6
-            spacing: 6
-
-            // Header: Number + Name
-            Row {
-                width: parent.width
-                spacing: 4
-                Text {
-                    text: channelNumber
-                    font.family: SaudadeTheme.fontMono
-                    font.pixelSize: 9
-                    color: selected ? SaudadeTheme.accentSelection : SaudadeTheme.textMuted
-                }
-                Text {
-                    text: channelName
-                    font.family: SaudadeTheme.fontSans
-                    font.pixelSize: 10
-                    font.weight: selected ? Font.DemiBold : Font.Medium
-                    color: selected ? SaudadeTheme.textPrimary : SaudadeTheme.textSecondary
-                    elide: Text.ElideRight
-                    width: 58
-                }
-            }
-
-            Rectangle { width: parent.width; height: 1; color: SaudadeTheme.lineSoft }
-
-            // Pan Knob
-            SaudadeKnob {
-                label: "PAN"
-                value: 0.5
-                displayText: "C"
-                knobSize: 28
-                anchors.horizontalCenter: parent.horizontalCenter
-            }
-
-            // Meter + Fader Stage
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: 8
-                height: parent.height - 146
-
-                SaudadeMeter {
-                    meterHeight: parent.height
-                    level: meterVal
-                    peak: meterVal > 0 ? meterVal + 0.04 : 0.0
-                }
-
-                SaudadeSlider {
-                    orientation: "vertical"
-                    trackLength: parent.height
-                    value: faderVal
-                }
-            }
-
-            // dB Readout
-            Text {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text: "-3.2 dB"
-                font.family: SaudadeTheme.fontMono
-                font.pixelSize: 9
-                color: SaudadeTheme.textSecondary
-            }
-
-            // Mute / Solo / Arm Row
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: 3
-
-                SaudadeButton {
-                    text: "M"
-                    variant: "secondary"
-                    checkable: true
-                    compact: true
-                    implicitWidth: 20
-                    implicitHeight: 18
-                }
-                SaudadeButton {
-                    text: "S"
-                    variant: "secondary"
-                    checkable: true
-                    compact: true
-                    implicitWidth: 20
-                    implicitHeight: 18
-                }
-                SaudadeButton {
-                    text: "R"
-                    variant: "record"
-                    checkable: true
-                    compact: true
-                    implicitWidth: 20
-                    implicitHeight: 18
                 }
             }
         }

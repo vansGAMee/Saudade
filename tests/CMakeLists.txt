@@ -134,6 +134,13 @@ target_link_libraries(test_model
 saudade_set_warnings(test_model)
 add_test(NAME model COMMAND test_model)
 
+add_executable(test_midi_import
+    test_midi_import.cpp
+)
+target_link_libraries(test_midi_import PRIVATE saudade_model)
+saudade_set_warnings(test_midi_import)
+add_test(NAME midi_import COMMAND test_midi_import)
+
 add_executable(test_pattern_compiler
     test_pattern_compiler.cpp
 )
@@ -170,13 +177,107 @@ if(SAUDADE_BUILD_GUI)
     )
     saudade_set_warnings(test_ui_editor)
     add_test(NAME ui_editor COMMAND test_ui_editor)
+
+    add_executable(test_project_file
+        test_project_file.cpp
+    )
+    target_link_libraries(test_project_file
+        PRIVATE
+            saudade_ui
+            Qt6::Core
+    )
+    saudade_set_warnings(test_project_file)
+    add_test(NAME project_file COMMAND test_project_file)
+
+    add_executable(test_wav_export
+        test_wav_export.cpp
+    )
+    target_link_libraries(test_wav_export
+        PRIVATE
+            saudade_ui
+            saudade_graph
+            Qt6::Core
+    )
+    saudade_set_warnings(test_wav_export)
+    add_test(NAME wav_export COMMAND test_wav_export)
+
+    add_executable(test_beta_stress
+        test_beta_stress.cpp
+    )
+    target_link_libraries(test_beta_stress
+        PRIVATE
+            saudade_ui
+            saudade_graph
+            Qt6::Core
+            Qt6::Gui
+            Qt6::Quick
+    )
+    saudade_set_warnings(test_beta_stress)
+    add_test(NAME beta_stress COMMAND test_beta_stress)
+
+    add_executable(test_beta_workflow
+        test_beta_workflow.cpp
+    )
+    target_link_libraries(test_beta_workflow
+        PRIVATE
+            saudade_ui
+            saudade_graph
+            Qt6::Core
+    )
+    saudade_set_warnings(test_beta_workflow)
+    add_test(NAME beta_workflow COMMAND test_beta_workflow)
     if(SAUDADE_ENABLE_TSAN)
         set_tests_properties(ui_editor PROPERTIES
             ENVIRONMENT "TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tsan_suppressions.supp"
         )
     endif()
+
+    add_executable(test_m7_songwriting
+        test_m7_songwriting.cpp
+    )
+    target_link_libraries(test_m7_songwriting
+        PRIVATE
+            saudade_ui
+            saudade_graph
+            saudade_audio
+            saudade_time
+            saudade_events
+            saudade_model
+            Qt6::Core
+            Qt6::Gui
+            Qt6::Quick
+            Qt6::Qml
+            Qt6::Test
+    )
+    saudade_set_warnings(test_m7_songwriting)
+    add_test(NAME m7_songwriting COMMAND test_m7_songwriting)
+    add_executable(test_m7_acceptance_flow
+        test_m7_acceptance_flow.cpp
+    )
+    target_link_libraries(test_m7_acceptance_flow
+        PRIVATE
+            saudade_ui
+            saudade_pipewire
+            saudade_graph
+            saudade_audio
+            saudade_time
+            saudade_events
+            saudade_model
+            Qt6::Core
+            Qt6::Gui
+            Qt6::Quick
+            Qt6::Qml
+            Qt6::Test
+    )
+    target_compile_definitions(test_m7_acceptance_flow
+        PRIVATE
+            SAUDADE_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    )
+    saudade_set_warnings(test_m7_acceptance_flow)
+    add_test(NAME m7_acceptance_flow COMMAND test_m7_acceptance_flow)
+    if(SAUDADE_ENABLE_TSAN)
+        set_tests_properties(m7_acceptance_flow PROPERTIES
+            ENVIRONMENT "TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tsan_suppressions.supp"
+        )
+    endif()
 endif()
-
-
-
-

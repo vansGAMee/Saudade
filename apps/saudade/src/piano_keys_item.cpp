@@ -1,15 +1,26 @@
 #include <saudade/ui/piano_keys_item.hpp>
+#include <saudade/ui/editor_controller.hpp>
 
 #include <QSGGeometryNode>
 #include <QSGGeometry>
 #include <QSGVertexColorMaterial>
 #include <QSGFlatColorMaterial>
+#include <QMouseEvent>
 
 namespace saudade::ui {
 
 PianoKeysItem::PianoKeysItem(QQuickItem* parent)
     : QQuickItem(parent) {
     setFlag(ItemHasContents, true);
+    setAcceptedMouseButtons(Qt::LeftButton);
+}
+
+void PianoKeysItem::setController(EditorController* controller) {
+    if (controller_ == controller) {
+        return;
+    }
+    controller_ = controller;
+    emit controllerChanged();
 }
 
 void PianoKeysItem::setRowHeight(float h) {
@@ -33,6 +44,45 @@ void PianoKeysItem::setMaxPitch(int p) {
     update();
 }
 
+void PianoKeysItem::mousePressEvent(QMouseEvent* event) {
+    if (event->button() == Qt::LeftButton) {
+        const int pitch = Coordinates::quantize_pitch(
+            static_cast<float>(event->position().y()), row_height_, min_pitch_, max_pitch_);
+        pressed_pitch_ = pitch;
+        if (controller_) {
+            controller_->auditionNoteOn(static_cast<double>(pitch), 0.85f);
+        }
+        update();
+        event->accept();
+    }
+}
+
+void PianoKeysItem::mouseMoveEvent(QMouseEvent* event) {
+    if (pressed_pitch_ >= 0) {
+        const int pitch = Coordinates::quantize_pitch(
+            static_cast<float>(event->position().y()), row_height_, min_pitch_, max_pitch_);
+        if (pitch != pressed_pitch_) {
+            pressed_pitch_ = pitch;
+            if (controller_) {
+                controller_->auditionNoteOn(static_cast<double>(pitch), 0.85f);
+            }
+            update();
+        }
+        event->accept();
+    }
+}
+
+void PianoKeysItem::mouseReleaseEvent(QMouseEvent* event) {
+    if (pressed_pitch_ >= 0) {
+        if (controller_) {
+            controller_->auditionNoteOff();
+        }
+        pressed_pitch_ = -1;
+        update();
+        event->accept();
+    }
+}
+
 QSGNode* PianoKeysItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData* /*data*/) {
     auto* root = static_cast<QSGNode*>(oldNode);
     if (!root) {
@@ -42,6 +92,7 @@ QSGNode* PianoKeysItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData* /
     QSGGeometryNode* whiteKeysNode = nullptr;
     QSGGeometryNode* cKeysNode = nullptr;
     QSGGeometryNode* blackKeysNode = nullptr;
+    QSGGeometryNode* pressedKeyNode = nullptr;
     QSGGeometryNode* linesNode = nullptr;
 
     if (root->childCount() == 0) {
@@ -72,7 +123,16 @@ QSGNode* PianoKeysItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData* /
         blackKeysNode->setFlag(QSGNode::OwnsGeometry);
         root->appendChildNode(blackKeysNode);
 
-        // Child 3: Divider lines (#18181E)
+        // Child 3: Pressed key highlight (#D6B49A with warmth)
+        pressedKeyNode = new QSGGeometryNode();
+        auto* pressMat = new QSGFlatColorMaterial();
+        pressMat->setColor(QColor(214, 180, 154, 180));
+        pressedKeyNode->setMaterial(pressMat);
+        pressedKeyNode->setFlag(QSGNode::OwnsMaterial);
+        pressedKeyNode->setFlag(QSGNode::OwnsGeometry);
+        root->appendChildNode(pressedKeyNode);
+
+        // Child 4: Divider lines (#18181E)
         linesNode = new QSGGeometryNode();
         auto* lineMat = new QSGFlatColorMaterial();
         lineMat->setColor(QColor(24, 24, 30));
@@ -84,7 +144,8 @@ QSGNode* PianoKeysItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData* /
         whiteKeysNode = static_cast<QSGGeometryNode*>(root->childAtIndex(0));
         cKeysNode = static_cast<QSGGeometryNode*>(root->childAtIndex(1));
         blackKeysNode = static_cast<QSGGeometryNode*>(root->childAtIndex(2));
-        linesNode = static_cast<QSGGeometryNode*>(root->childAtIndex(3));
+        pressedKeyNode = static_cast<QSGGeometryNode*>(root->childAtIndex(3));
+        linesNode = static_cast<QSGGeometryNode*>(root->childAtIndex(4));
     }
 
     const int num_rows = std::max(1, max_pitch_ - min_pitch_ + 1);
@@ -154,6 +215,25 @@ QSGNode* PianoKeysItem::updatePaintNode(QSGNode* oldNode, UpdatePaintNodeData* /
 
     blackKeysNode->setGeometry(blackGeom);
     blackKeysNode->markDirty(QSGNode::DirtyGeometry);
+
+    // Pressed key highlight
+    if (pressed_pitch_ >= min_pitch_ && pressed_pitch_ <= max_pitch_) {
+        auto* pressGeom = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), 6);
+        pressGeom->setDrawingMode(QSGGeometry::DrawTriangles);
+        auto* vPress = pressGeom->vertexDataAsPoint2D();
+        const float py0 = Coordinates::pitch_to_y(pressed_pitch_, row_height_, max_pitch_);
+        const float py1 = py0 + row_height_;
+        const bool is_black = Coordinates::is_black_key(pressed_pitch_);
+        const float px1 = is_black ? (w * 0.65f) : w;
+        int pIdx = 0;
+        addQuad(vPress, pIdx, 0.0f, py0, px1, py1);
+        pressedKeyNode->setGeometry(pressGeom);
+        pressedKeyNode->markDirty(QSGNode::DirtyGeometry);
+    } else {
+        auto* emptyGeom = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), 0);
+        pressedKeyNode->setGeometry(emptyGeom);
+        pressedKeyNode->markDirty(QSGNode::DirtyGeometry);
+    }
 
     // Build divider lines
     auto* linesGeom = new QSGGeometry(QSGGeometry::defaultAttributes_Point2D(), num_rows * 2 + 2);

@@ -24,6 +24,15 @@ LaneId Pattern::add_lane(std::string name) {
     return id;
 }
 
+bool Pattern::add_lane(PatternLane lane) {
+    if (lane.id() == 0 || find_lane(lane.id()) != nullptr) {
+        return false;
+    }
+    next_lane_id_ = std::max(next_lane_id_, lane.id() + 1);
+    lanes_.push_back(std::move(lane));
+    return true;
+}
+
 bool Pattern::remove_lane(LaneId id) noexcept {
     const auto it = std::find_if(lanes_.begin(), lanes_.end(), [id](const PatternLane& lane) {
         return lane.id() == id;

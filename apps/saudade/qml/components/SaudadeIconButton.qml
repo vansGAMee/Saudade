@@ -286,6 +286,23 @@ Rectangle {
                 }
                 break;
 
+            case "metronome":
+                ctx.beginPath();
+                ctx.moveTo(w * 0.3, h * 0.85);
+                ctx.lineTo(w * 0.45, h * 0.2);
+                ctx.lineTo(w * 0.55, h * 0.2);
+                ctx.lineTo(w * 0.7, h * 0.85);
+                ctx.closePath();
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(w * 0.5, h * 0.75);
+                ctx.lineTo(w * 0.68, h * 0.28);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(w * 0.64, h * 0.38, 2.0, 0, 2 * Math.PI);
+                ctx.fill();
+                break;
+
             default:
                 ctx.beginPath();
                 ctx.arc(w * 0.5, h * 0.5, w * 0.3, 0, 2 * Math.PI);

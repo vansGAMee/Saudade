@@ -15,6 +15,26 @@ struct SineState {
     float phase{0.0f};
 };
 
+/// Envelope stages for ADSR volume envelope.
+enum class EnvelopeStage : uint8_t {
+    Idle = 0,
+    Attack,
+    Decay,
+    Sustain,
+    Release
+};
+
+/// 2-pole Cytomic SVF filter runtime state.
+struct SvfState {
+    float s1{0.0f};
+    float s2{0.0f};
+
+    void reset() noexcept {
+        s1 = 0.0f;
+        s2 = 0.0f;
+    }
+};
+
 /// Mutable runtime state for a single polyphonic synth voice.
 struct Voice {
     bool active{false};
@@ -22,8 +42,15 @@ struct Voice {
     double pitch{0.0};
     double frequency{440.0};
     float velocity{0.0f};
+    float gain{1.0f};
+    float pan{0.0f};
     float phase{0.0f};
+    float sub_phase{0.0f};
+    EnvelopeStage env_stage{EnvelopeStage::Idle};
+    float env_level{0.0f};
+    SvfState svf{};
     uint64_t age{0};
+    bool is_audition{false};
 
     void reset() noexcept {
         active = false;
@@ -31,15 +58,22 @@ struct Voice {
         pitch = 0.0;
         frequency = 440.0;
         velocity = 0.0f;
+        gain = 1.0f;
+        pan = 0.0f;
         phase = 0.0f;
+        sub_phase = 0.0f;
+        env_stage = EnvelopeStage::Idle;
+        env_level = 0.0f;
+        svf.reset();
         age = 0;
+        is_audition = false;
     }
 };
 
-/// Preallocated state for a minimal polyphonic synthesizer.
-/// Minimum 8 voices preallocated with zero realtime allocation.
+/// Preallocated state for a subtractive polyphonic synthesizer.
+/// 16 voices preallocated with zero realtime allocation.
 struct PolySynthState {
-    static constexpr size_t kVoiceCount = 8;
+    static constexpr size_t kVoiceCount = 16;
 
     std::array<Voice, kVoiceCount> voices{};
     uint64_t next_voice_age{0};

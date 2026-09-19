@@ -59,7 +59,7 @@ private:
     // Preallocated channel pointers for realtime callback (zero-alloc)
     float* channel_ptrs_[2]{nullptr, nullptr};
 
-    struct pw_main_loop* loop_{nullptr};
+    std::atomic<struct pw_main_loop*> loop_{nullptr};
     struct pw_filter* filter_{nullptr};
     void* port_left_{nullptr};
     void* port_right_{nullptr};

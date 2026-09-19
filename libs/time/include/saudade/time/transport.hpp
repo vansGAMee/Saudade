@@ -18,17 +18,20 @@ enum class TransportState : uint8_t {
 struct TransportSnapshot {
     bool playing{false};
     SamplePosition block_start_sample{0};
+    bool loop_enabled{false};
+    SamplePosition loop_start_sample{0};
+    SamplePosition loop_end_sample{0};
 };
 
 /// Transport controller managing the timeline playback state and position.
 ///
 /// Control thread:
-/// - Commands: play(), stop(), seek_samples(), seek_beats()
-/// - Queries: state(), is_playing(), current_sample(), current_beat()
+/// - Commands: play(), stop(), seek_samples(), seek_beats(), set_loop_*(), set_bpm()
+/// - Queries: state(), is_playing(), current_sample(), current_beat(), is_loop_enabled(), etc.
 ///
 /// Realtime audio thread:
 /// - acquire_snapshot(): Captured once at the beginning of process() [lock-free, noexcept]
-/// - advance_quantum(): Advances position by num_frames if playing [lock-free, noexcept]
+/// - advance_quantum(): Advances position by num_frames if playing, wraps if looping [lock-free, noexcept]
 class TransportController {
 public:
     explicit TransportController(TempoMap tempo_map = TempoMap{}) noexcept;
@@ -53,6 +56,15 @@ public:
     /// Seeks to an exact musical BeatPosition using the TempoMap and actual sample rate.
     void seek_beats(BeatPosition beat_pos, double sample_rate) noexcept;
 
+    /// Controls loop playback.
+    void set_loop_enabled(bool enabled) noexcept;
+    void set_loop_range_samples(SamplePosition start_sample, SamplePosition end_sample) noexcept;
+    void set_loop_range_beats(BeatPosition start_beat, BeatPosition end_beat, double sample_rate) noexcept;
+
+    [[nodiscard]] bool is_loop_enabled() const noexcept;
+    [[nodiscard]] SamplePosition loop_start_sample() const noexcept;
+    [[nodiscard]] SamplePosition loop_end_sample() const noexcept;
+
     [[nodiscard]] TransportState state() const noexcept;
     [[nodiscard]] bool is_playing() const noexcept;
     [[nodiscard]] SamplePosition current_sample() const noexcept;
@@ -60,6 +72,7 @@ public:
 
     [[nodiscard]] const TempoMap& tempo_map() const noexcept { return tempo_map_; }
     void set_tempo_map(TempoMap map) noexcept { tempo_map_ = map; }
+    void set_bpm(double bpm) noexcept { tempo_map_.set_bpm(bpm); }
 
     // --- Realtime-thread API (Hard Realtime Safe: lock-free, zero-alloc, noexcept) ---
 
@@ -68,6 +81,7 @@ public:
     [[nodiscard]] TransportSnapshot acquire_snapshot() noexcept;
 
     /// Advances the timeline position by the processed frame count if playing.
+    /// Wraps around if loop is enabled and loop boundary is crossed.
     void advance_quantum(uint32_t num_frames) noexcept;
 
 private:
@@ -84,6 +98,9 @@ private:
     std::atomic<bool> playing_requested_{false};
     std::atomic<SamplePosition> seek_target_{0};
     std::atomic<uint64_t> seek_version_{0};
+    std::atomic<bool> loop_enabled_requested_{false};
+    std::atomic<SamplePosition> loop_start_requested_{0};
+    std::atomic<SamplePosition> loop_end_requested_{0};
 
     // RT -> Control atomics
     std::atomic<uint64_t> acknowledged_seek_version_{0};
@@ -93,7 +110,7 @@ private:
     // Local RT state (only accessed by single realtime thread)
     SamplePosition rt_current_sample_{0};
     uint64_t last_seen_seek_version_{0};
-    TransportSnapshot active_snapshot_{false, 0};
+    TransportSnapshot active_snapshot_{false, 0, false, 0, 0};
     uint64_t snapshotted_seek_version_{0};
 };
 
