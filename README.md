@@ -1,4 +1,7 @@
 # Saudade
+<img width="692" height="388" alt="2026-09-19 12-42-41" src="https://github.com/user-attachments/assets/98c7d38d-0341-4237-9f9a-7105053d2d65" />
+
+
 <img width="1122" height="1402" alt="ChatGPT Image Sep 18, 2026, 10_51_42 AM" src="https://github.com/user-attachments/assets/db492afa-c3d5-448f-b9f1-2fe6d3e73d74" />
 
 Saudade is a Linux-first open-source professional Digital Audio Workstation (DAW) written in C++23.
